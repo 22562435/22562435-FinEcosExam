@@ -13,8 +13,8 @@ gc() # garbage collection - It can be useful to call gc after a large object has
 ```
 
     ##          used (Mb) gc trigger (Mb) max used (Mb)
-    ## Ncells 483072 25.8    1036977 55.4   686457 36.7
-    ## Vcells 894143  6.9    8388608 64.0  1876677 14.4
+    ## Ncells 483074 25.8    1036982 55.4   686457 36.7
+    ## Vcells 894151  6.9    8388608 64.0  1876677 14.4
 
 ``` r
 library(tidyverse)
@@ -34,3 +34,5 @@ library(tidyverse)
 ``` r
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 ```
+
+this is a test
