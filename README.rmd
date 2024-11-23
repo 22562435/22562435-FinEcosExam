@@ -18,6 +18,9 @@ Add binary files in bin, and closed R functions in code. Human Readable settings
 rm(list = ls()) # Clean your environment:
 gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
 library(tidyverse)
+
+source("code/install_and_load.R")
+c("dplyr", "ggplot2", "tidyr") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 ```
 this is a test
