@@ -1,4 +1,6 @@
-# Purpose
+# Financial Econometrics 871 Exam
+
+## 
 
 Purpose of this work folder.
 
@@ -13,8 +15,8 @@ gc() # garbage collection - It can be useful to call gc after a large object has
 ```
 
     ##          used (Mb) gc trigger (Mb) max used (Mb)
-    ## Ncells 483074 25.8    1036982 55.4   686457 36.7
-    ## Vcells 894151  6.9    8388608 64.0  1876677 14.4
+    ## Ncells 483126 25.9    1037131 55.4   686457 36.7
+    ## Vcells 894291  6.9    8388608 64.0  1876677 14.4
 
 ``` r
 library(tidyverse)
@@ -32,6 +34,8 @@ library(tidyverse)
     ## ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
 
 ``` r
+source("code/install_and_load.R")
+c("dplyr", "ggplot2", "tidyr") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 ```
 
