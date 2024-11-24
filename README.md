@@ -1,26 +1,13 @@
 # Financial Econometrics 871 Exam
 
-## 
-
-Purpose of this work folder.
-
-Ideally store a minimum working example data set in data folder.
-
-Add binary files in bin, and closed R functions in code. Human Readable
-settings files (e.g. csv) should be placed in settings/
-
-``` r
-rm(list = ls()) # Clean your environment:
-gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
-```
+This document outlines my workflow (Liam Andrew Beattie, Student
+No. 22562435) for the Financial Econometrics exam (25-27 November 2024).
+The accompanying code/ folder on GitHub contains functions used within
+this document.
 
     ##          used (Mb) gc trigger (Mb) max used (Mb)
-    ## Ncells 483126 25.9    1037131 55.4   686457 36.7
-    ## Vcells 894291  6.9    8388608 64.0  1876677 14.4
-
-``` r
-library(tidyverse)
-```
+    ## Ncells 483127 25.9    1037134 55.4   686457 36.7
+    ## Vcells 894271  6.9    8388608 64.0  1876677 14.4
 
     ## ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
     ## ✔ dplyr     1.1.4     ✔ readr     2.1.5
@@ -33,10 +20,6 @@ library(tidyverse)
     ## ✖ dplyr::lag()    masks stats::lag()
     ## ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
 
-``` r
-source("code/install_and_load.R")
-c("dplyr", "ggplot2", "tidyr") %>% install_and_load()
-list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
-```
+## Question 1
 
-this is a test
+Question 1

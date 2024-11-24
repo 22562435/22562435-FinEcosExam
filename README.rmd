@@ -8,25 +8,24 @@ output:
 ---
 
 # Financial Econometrics 871 Exam
-## 
-
-Purpose of this work folder.
-
-Ideally store a minimum working example data set in data folder.
-
-Add binary files in bin, and closed R functions in code. Human Readable settings files (e.g. csv) should be placed in settings/
 
 
-```{r setup}
+This document outlines my workflow (Liam Andrew Beattie, Student No. 22562435) for the Financial Econometrics exam (25-27 November 2024). The accompanying code/ folder on GitHub contains functions used within this document. 
 
-rm(list = ls()) # Clean your environment:
-gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
+
+```{r setup, echo=FALSE,output=FALSE}
+
+rm(list = ls()) # Cleans environment:
+gc() 
 library(tidyverse)
 
 source("code/install_and_load.R")
 c("dplyr", "ggplot2", "tidyr") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 ```
-this is a test
+
+## Question 1 
+
+Question 1
 
 
