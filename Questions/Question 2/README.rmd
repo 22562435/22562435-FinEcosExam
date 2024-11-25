@@ -13,12 +13,679 @@ Ideally store a minimum working example data set in data folder.
 Add binary files in bin, and closed R functions in code. Human Readable settings files (e.g. csv) should be placed in settings/
 
 
-```{r}
+```{r setup, include=FALSE}
 
 rm(list = ls()) # Clean your environment:
 gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
-library(tidyverse)
+source("code/install_and_load.R")
+install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra"))
+
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+Indexes <- read_rds("data/Cncy_Hedge_Assets.rds") %>%
+  mutate(date = floor_date(date, "month"))
+Zar <- read_rds("data/Monthly_zar.rds")%>%
+  mutate(date = floor_date(date, "month"))
+```
+
+
+
+```{r}
+# Combine asset and currency data into one tidy dataset
+tidy_data <- Indexes %>%
+  pivot_longer(cols = -date, names_to = "Tickers", values_to = "value") %>%
+  rename(value = value) %>%
+  bind_rows(
+    Zar
+  ) %>%
+  arrange(date, Tickers)
+
+# View the tidy dataset
+head(tidy_data)
+
+```
+
+```{r}
+library(tidyverse)
+
+# Step 1: Calculate monthly currency returns
+currency_returns <- tidy_data %>%
+  filter(Tickers == "$ZAR.USD") %>%
+  arrange(date) %>%
+  mutate(currency_return = log(value / lag(value))) %>%
+  select(date, currency_return)
+
+# Step 2: Convert currency returns into tidy format
+currency_returns_tidy <- currency_returns %>%
+  rename(value = currency_return) %>%
+  mutate(Tickers = "currency_returns")  # Add new Tickers label
+
+# Step 3: Merge currency returns back into tidy_data
+tidy_data <- tidy_data %>%
+  bind_rows(currency_returns_tidy)  # Add currency returns as new rows
+
+
+
+# Step 4: Assign weights for portfolio
+weights <- tibble(
+  Tickers = c("MSCI_ACWI", "Bbg_Agg", "J433", "ALBI"),
+  weight = c(0.18, 0.12, 0.42, 0.28)  # 70% local, 30% global split
+)
+
+
+# Step 5: Calculate portfolio returns (hedged and unhedged)
+portfolio_returns <- tidy_data %>%
+  # Rejoin the currency returns to ensure 'currency_return' exists
+  left_join(currency_returns, by = "date") %>%
+  left_join(weights, by = "Tickers") %>%
+  mutate(
+    # Recalculate adjusted return for ZAR-denominated tickers
+    adjusted_return = case_when(
+      Tickers %in% c("J433", "ALBI") ~ value - currency_return,  # Hedged returns
+      TRUE ~ value  # USD assets remain unchanged
+    )
+  ) %>%
+  filter(Tickers %in% weights$Tickers) %>%  # Only include portfolio tickers
+  group_by(date) %>%
+  summarize(
+    unhedged_return = sum(value * weight, na.rm = TRUE),  # Use unadjusted ZAR returns
+    hedged_return = sum(adjusted_return * weight, na.rm = TRUE)  # Use hedged ZAR returns
+  ) %>%
+  pivot_longer(cols = c(unhedged_return, hedged_return), names_to = "Tickers", values_to = "value") %>%
+  ungroup()
+
+
+# Step 6: Add portfolio returns back into tidy_data
+tidy_data <- tidy_data %>%
+  select(date, Tickers, value) %>%  # Keep original tidy_data columns
+  bind_rows(portfolio_returns)     # Add portfolio returns in tidy format
+
+
+```
+
+```{r}
+# Example usage
+# Assuming tidy_data is already defined in your environment
+plot_portfolio_relationships(tidy_data, "hedged_return", "currency_returns")
+```
+
+
+```{r}
+# Example usage
+# Assuming tidy_data is already defined in your environment
+plot_portfolio_relationships(tidy_data, "unhedged_return", "currency_returns")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Install ggExtra if necessary
+# install.packages("ggExtra")
+
+
+
+# Filter for the relevant data
+scatter_data <- tidy_data %>%
+  filter(Tickers %in% c("unhedged_return", "currency_returns")) %>%
+  pivot_wider(names_from = Tickers, values_from = value) %>%
+  filter(!is.na(unhedged_return), !is.na(currency_returns))  # Remove rows with missing values
+
+# Create the scatter plot
+scatter_plot <- ggplot(scatter_data, aes(x = currency_returns, y = unhedged_return)) +
+  geom_point(alpha = 0.6, color = "steelblue") +  # Scatter points
+  geom_smooth(formula = y ~ x,method = "lm", color = "red", linetype = "dashed", se = TRUE) +  # Trend line
+  labs(
+    title = "Relationship Between Unhedged Portfolio Returns and ZAR/USD Returns",
+    x = "ZAR/USD Returns",
+    y = "Unhedged Portfolio Returns"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 12)
+  ) +
+  xlim(-0.2, 0.2) +  # Set x-axis limit
+  ylim(-0.2, 0.2)   
+
+# Add marginal density plots to the scatter plot
+ggMarginal(scatter_plot, type = "density", margins = "both", size = 5)
+
+```
+
+
+
+```{r}
+# Filter for the relevant data
+scatter_data <- tidy_data %>%
+  filter(Tickers %in% c("hedged_return", "currency_returns")) %>%
+  pivot_wider(names_from = Tickers, values_from = value) %>%
+  filter(!is.na(hedged_return), !is.na(currency_returns))  # Remove rows with missing values
+
+# Create the scatter plot
+scatter_plot <- ggplot(scatter_data, aes(x = currency_returns, y = hedged_return)) +
+  geom_point(alpha = 0.6, color = "steelblue") +  # Scatter points
+  geom_smooth(formula = y ~ x, method = "lm", color = "red", linetype = "dashed", se = TRUE) +  # Trend line
+  labs(
+    title = "Relationship Between Unhedged Portfolio Returns and ZAR/USD Returns",
+    x = "ZAR/USD Returns",
+    y = "hedged Portfolio Returns"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 12)
+  ) +
+  xlim(-0.2, 0.2) +  # Set x-axis limit
+  ylim(-0.2, 0.2)    # Set y-axis limit
+
+# Add marginal density plots to the scatter plot
+ggMarginal(scatter_plot, type = "density", margins = "both", size = 5)
+```
+
+
+
+```{r}
+library(ggplot2)
+
+# Filter for the relevant data
+scatter_data <- tidy_data %>%
+  filter(Tickers %in% c("unhedged_return", "currency_returns")) %>%
+  pivot_wider(names_from = Tickers, values_from = value) %>%
+  filter(!is.na(unhedged_return), !is.na(currency_returns))  # Remove rows with missing values
+
+# Create the scatter plot
+ggplot(scatter_data, aes(x = currency_returns, y = unhedged_return)) +
+  geom_point(alpha = 0.6, color = "steelblue") +  # Scatter points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed", se = TRUE) +  # Trend line
+  labs(
+    title = "Relationship Between Unhedged Portfolio Returns and ZAR/USD Returns",
+    x = "ZAR/USD Returns",
+    y = "Unhedged Portfolio Returns"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 12)
+  )
+```
+
+
+
+<!-- ```{r} -->
+
+
+<!-- # Step 1: Calculate monthly currency returns -->
+<!-- currency_returns <- tidy_data %>% -->
+<!--   filter(Tickers == "$ZAR.USD") %>% -->
+<!--   arrange(date) %>% -->
+<!--   mutate(currency_return = log(value / lag(value))) %>% -->
+<!--   select(date, currency_return) -->
+
+<!-- # Step 2: Merge currency returns back into the dataset -->
+<!-- tidy_data <- tidy_data %>% -->
+<!--   left_join(currency_returns, by = "date") -->
+
+<!-- # Step 3: Adjust ZAR-denominated returns for a fully hedged portfolio -->
+<!-- tidy_data <- tidy_data %>% -->
+<!--   mutate( -->
+<!--     adjusted_return = case_when( -->
+<!--       Tickers %in% c("J433", "ALBI") ~ value - currency_return,  # Hedged returns -->
+<!--       TRUE ~ value  # USD assets remain unchanged -->
+<!--     ) -->
+<!--   ) -->
+
+<!-- # Step 4: Assign weights for portfolio -->
+<!-- weights <- tibble( -->
+<!--   Tickers = c("MSCI_ACWI", "Bbg_Agg", "J433", "ALBI"), -->
+<!--   weight = c(0.18, 0.12, 0.42, 0.28)  # 70% local, 30% global split -->
+<!-- ) -->
+
+<!-- # Step 5: Calculate portfolio returns (hedged and unhedged) -->
+<!-- portfolio_returns <- tidy_data %>% -->
+<!--   filter(Tickers != "$ZAR.USD") %>%  # Exclude currency ticker -->
+<!--   left_join(weights, by = "Tickers") %>% -->
+<!--   group_by(date) %>% -->
+<!--   summarize( -->
+<!--     unhedged_return = sum(value * weight, na.rm = TRUE),  # Use unadjusted ZAR returns -->
+<!--     hedged_return = sum(adjusted_return * weight, na.rm = TRUE)  # Use hedged ZAR returns -->
+<!--   ) %>% -->
+<!--   ungroup() -->
+
+<!-- # Step 6: Combine portfolio returns back into tidy_data for completeness -->
+<!-- tidy_data <- tidy_data %>% -->
+<!--   left_join(portfolio_returns, by = "date") -->
+
+<!-- # View the resulting data -->
+<!-- head(tidy_data) -->
+
+<!-- ``` -->
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Join ZAR data with Indexes and calculate FX returns
+Indexes <- Indexes %>%
+  left_join(
+    zar %>% select(date,value) %>%
+      arrange(date) %>%
+      mutate(FX_return = value / lag(value) - 1),
+    by = "date"
+  )
+
+# Convert J433 and ALBI to USD returns (Hedged)
+Indexes <- Indexes %>%
+  mutate(
+    J433_USD = (1 + J433) / (1 + FX_return) - 1,
+    ALBI_USD = (1 + ALBI) / (1 + FX_return) - 1
+  )
+
+# Construct portfolios in tidy format
+portfolios <- Indexes %>%
+  mutate(
+    # Hedged Portfolio (Currency risk is removed)
+    Equity_Hedged = 0.7 * J433_USD + 0.3 * MSCI_ACWI,
+    Bond_Hedged = 0.7 * ALBI_USD + 0.3 * Bbg_Agg,
+    Portfolio_Hedged = 0.6 * Equity_Hedged + 0.4 * Bond_Hedged,
+    
+    # Unhedged Portfolio (Exposed to currency risk)
+    Equity_Unhedged = 0.7 * J433 + 0.3 * (MSCI_ACWI * (1 + FX_return)),
+    Bond_Unhedged = 0.7 * ALBI + 0.3 * (Bbg_Agg * (1 + FX_return)),
+    Portfolio_Unhedged = 0.6 * Equity_Unhedged + 0.4 * Bond_Unhedged
+  ) %>%
+  select(date, Portfolio_Unhedged, Portfolio_Hedged) %>%
+  pivot_longer(-date, names_to = "Portfolio", values_to = "Return")
+
+# Rolling realized volatility
+rolling_vol <- portfolios %>%
+  group_by(Portfolio) %>%
+  mutate(
+    Rolling_Vol = rollapply(Return, width = 12, FUN = sd, fill = NA, align = "right")
+  )
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+# Align dates by taking the floor of the month
+zar <- zar %>%
+  mutate(date = floor_date(date, "month"))
+
+Indexes <- Indexes %>%
+  mutate(date = floor_date(date, "month"))
+
+# Join ZAR data with Indexes and calculate FX returns
+Indexes <- Indexes %>%
+  left_join(
+    zar %>%
+      arrange(date) %>%
+      mutate(FX_return = value / lag(value) - 1),
+    by = "date"
+  )
+
+# Convert J433 and ALBI to USD returns (Unhedged)
+Indexes <- Indexes %>%
+  mutate(
+    J433_USD = (1 + J433) / (1 + FX_return) - 1,
+    ALBI_USD = (1 + ALBI) / (1 + FX_return) - 1
+  )
+
+# Construct portfolios in tidy format
+portfolios <- Indexes %>%
+  mutate(
+    # Unhedged Portfolio
+    Equity_USD = 0.7 * J433_USD + 0.3 * MSCI_ACWI,
+    Bond_USD = 0.7 * ALBI_USD + 0.3 * Bbg_Agg,
+    Portfolio_Unhedged = 0.6 * Equity_USD + 0.4 * Bond_USD,
+    
+    # Hedged Portfolio
+    Equity_Hedged = 0.7 * J433 + 0.3 * (MSCI_ACWI * (1 + FX_return)),
+    Bond_Hedged = 0.7 * ALBI + 0.3 * (Bbg_Agg * (1 + FX_return)),
+    Portfolio_Hedged = 0.6 * Equity_Hedged + 0.4 * Bond_Hedged
+  ) %>%
+  select(date, Portfolio_Unhedged, Portfolio_Hedged) %>%
+  pivot_longer(-date, names_to = "Tickers", values_to = "Return")
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+# Rolling realized volatility
+rolling_vol <- portfolios %>%
+  group_by(Portfolio) %>%
+  mutate(
+    Rolling_Vol = rollapply(Return, width = 12, FUN = sd, fill = NA, align = "right")
+  )
+
+```
+
+
+
+```{r}
+ggplot(rolling_vol, aes(x = date, y = Rolling_Vol, color = Portfolio)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Rolling Realized Volatility: Hedged vs. Unhedged Portfolios",
+    x = "Date",
+    y = "Volatility",
+    color = "Portfolio"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(ggExtra)
+library(dplyr)
+
+# Simulate data (replace with your actual dataset)
+set.seed(123)
+data <- tibble(
+  USD_ZAR_Returns = rnorm(200, mean = 0, sd = 0.1), # Simulated USD-ZAR returns
+  Portfolio_Returns = -0.5 * USD_ZAR_Returns + rnorm(200, mean = 0, sd = 0.05) # Simulated portfolio returns
+)
+
+# Calculate quadrant percentages
+quadrants <- data %>%
+  mutate(
+    Quadrant = case_when(
+      USD_ZAR_Returns < 0 & Portfolio_Returns > 0 ~ "Hedge Amplifies Volatility ",
+      USD_ZAR_Returns < 0 & Portfolio_Returns < 0 ~ "Best Case for Hedge ",
+      USD_ZAR_Returns > 0 & Portfolio_Returns > 0 ~ "Hedging Not Free ",
+      TRUE ~ "Hedge Throws Away Returns"
+    )
+  )
+
+# Base scatter plot
+scatter <- ggplot(quadrants, aes(x = USD_ZAR_Returns, y = Portfolio_Returns)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_smooth(method = "lm", color = "black", linetype = "dashed") + # Trend line
+  annotate("text", x = -0.15, y = 0.15, label = "44%", size = 5) +
+  annotate("text", x = 0.15, y = 0.15, label = "28%", size = 5) +
+  annotate("text", x = -0.15, y = -0.15, label = "9%", size = 5) +
+  annotate("text", x = 0.15, y = -0.15, label = "19%", size = 5) +
+  labs(
+    x = "USD-ZAR Returns",
+    y = "60/40 Global (USD Returns)",
+    title = "Impact of Hedging on Portfolio Performance"
+  ) +
+  theme_minimal()
+
+# Add marginal distributions
+final_plot <- ggMarginal(
+  scatter,
+  type = "histogram",
+  margins = "both",
+  fill = "lightgreen",
+  color = "darkgreen"
+)
+
+# Display the plot
+final_plot
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r currency-convert}
+# Calculate exchange rate returns
+ZAR <- ZAR %>%
+  arrange(date) %>%
+  mutate(FX_return = value / lag(value) - 1)
+
+# Convert J433 and ALBI to USD returns
+Indexes <- Indexes %>%
+  arrange(date) %>%
+  left_join(ZAR, by = "date") %>%
+  mutate(
+    J433_USD = (1 + J433) / (1 + FX_return) - 1,
+    ALBI_USD = (1 + ALBI) / (1 + FX_return) - 1
+  )
+
+
+```
+
+
+
+```{r}
+# Portfolio construction
+Indexes <- Indexes %>%
+  mutate(
+    # Unhedged Portfolio
+    Equity_USD = 0.7 * J433_USD + 0.3 * MSCI_ACWI,
+    Bond_USD = 0.7 * ALBI_USD + 0.3 * Bbg_Agg,
+    Portfolio_Unhedged = 0.6 * Equity_USD + 0.4 * Bond_USD,
+    
+    # Hedged Portfolio
+    Equity_Hedged = 0.7 * J433 + 0.3 * (MSCI_ACWI * (1 + FX_return)),
+    Bond_Hedged = 0.7 * ALBI + 0.3 * (Bbg_Agg * (1 + FX_return)),
+    Portfolio_Hedged = 0.6 * Equity_Hedged + 0.4 * Bond_Hedged
+  )
+
+```
+
+
+```{r}
+# Calculate rolling volatilities
+rolling_vol <- Indexes %>%
+  select(date, Portfolio_Unhedged, Portfolio_Hedged) %>%
+  pivot_longer(-date, names_to = "Portfolio", values_to = "Return") %>%
+  group_by(Portfolio) %>%
+  mutate(
+    Rolling_Vol = rollapply(Return, width = 12, FUN = sd, fill = NA, align = "right")
+  )
+
+```
+
+
+```{r}
+ggplot(rolling_vol, aes(x = date, y = Rolling_Vol, color = Portfolio)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Rolling Realized Volatility",
+    x = "Date",
+    y = "Volatility",
+    color = "Portfolio"
+  ) +
+  theme_minimal()
+
 ```
 
 
