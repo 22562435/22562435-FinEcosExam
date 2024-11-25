@@ -106,15 +106,17 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width 
 # Note: Include = FALSE implies the code is executed, but not printed in your pdf.
 # warning and message = FALSE implies ugly messages and warnings are removed from your pdf.
 # These should be picked up when you execute the command chunks (code sections below) in your rmd, not printed in your paper!
-
+rm(list = ls())
 # Lets load in example data, and see how this can be stored and later called from your 'data' folder.
 source("code/install_and_load.R")
-install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra"))
+install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra","xts"))
 
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 
 ALSI <- read_rds("data/ALSI.rds")
+ALSI$date <- as.Date(ALSI$date)
 RebDays <- read_rds("data/Rebalance_days.rds")
+Zar<-read_rds("data/Monthly_zar.rds")
 
 ```
 
@@ -124,4 +126,226 @@ RebDays <- read_rds("data/Rebalance_days.rds")
 <!-- ############################## -->
 
 # Introduction \label{Introduction}
+
+
+
+```{r}
+Zar<- Zar %>% categorize_currency( value)
+
+# View the modified dataset
+```
+
+
+
+
+```{r}
+
+# Assuming ALSI is your data frame
+# Convert date to Date type if not already
+
+
+# Calculate average returns by size and sector
+summary_data <- ALSI %>%
+  group_by(Sector, Tickers) %>%
+  summarise(
+    ALSI_Return = gm_mean(J203, na.rm = TRUE),
+    SWIX_Return = gm_mean(J403, na.rm = TRUE)
+  ) %>%
+  ungroup()
+```
+
+
+
+```{r}
+library(ggplot2)
+
+# Create a new column for size classification
+summary_data <- summary_data %>%
+  mutate(Size = case_when(
+    str_detect(Tickers, "L") ~ "Large Caps",
+    str_detect(Tickers, "M") ~ "Mid Caps",
+    TRUE ~ "Small Caps"
+  ))
+
+# Plotting
+ggplot(summary_data, aes(x = Size, fill = Sector)) +
+  geom_bar(aes(y = ALSI_Return), position = "dodge", stat = "identity",alpha=0.5) +
+  geom_bar(aes(y = SWIX_Return), position = "dodge", stat = "identity", alpha = 0.5) +
+  labs(title = "Average Returns by Size and Sector",
+       y = "Average Returns",
+       fill = "Sector") +
+  scale_fill_brewer(palette = "Set1") +
+  fmxdat::theme_fmx()
+```
+
+
+```{r}
+# Calculate sector returns over time
+sector_time_data <- ALSI %>%
+  group_by(date, Sector) %>%
+  summarise(
+    ALSI_Return = sum(J203, na.rm = TRUE),
+    SWIX_Return = sum(J403, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = c(ALSI_Return, SWIX_Return), names_to = "Index", values_to = "Return")
+
+# Plotting
+ggplot(sector_time_data, aes(x = date, y = Return, fill = Sector)) +
+  geom_area(position = "fill") +
+  facet_wrap(~ Index,ncol=1) +
+  labs(title = "Sector Exposure Over Time",
+       y = "Proportion of Returns",
+       fill = "Sector") +
+  fmxdat::theme_fmx() +
+  scale_fill_brewer(palette = "Set2")
+```
+
+
+
+```{r}
+evaluate_capped_index(ALSI, RebDays, capping_levels = c(0.05, 0.10, Inf),top_n = 100)
+
+```
+
+```{r}
+evaluate_capped_index(ALSI, RebDays, capping_levels = c(0.05, 0.10, Inf), SWIX = TRUE,top_n = 100)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Calculate cumulative returns for top N stocks
+top_n_stocks <- ALSI %>%
+  group_by(date) %>%
+  arrange(desc(J203)) %>%
+  slice(1:10) %>%
+  summarise(Total_ALSI_Return = sum(J203))
+
+# Plotting
+ggplot(top_n_stocks, aes(x = date, y = Total_ALSI_Return)) +
+  geom_line(color = "blue") +
+  labs(title = "Cumulative Returns of Top N Stocks (ALSI)",
+       y = "Cumulative Returns") +
+  theme_minimal()
+```
+
 
