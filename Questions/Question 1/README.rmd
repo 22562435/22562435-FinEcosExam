@@ -1,0 +1,26 @@
+---
+title: "Question 1: Systematic AI Fund"
+author: "Liam Andrew Beattie - 22562435"
+date: "`r Sys.Date()`"
+output: powerpoint_presentation
+---
+
+
+# Purpose
+
+Purpose of this work folder.
+
+Ideally store a minimum working example data set in data folder.
+
+Add binary files in bin, and closed R functions in code. Human Readable settings files (e.g. csv) should be placed in settings/
+
+
+```{r setup, include=FALSE}
+
+rm(list = ls()) # Clean your environment:
+gc() 
+library(tidyverse)
+list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+```
+
+
