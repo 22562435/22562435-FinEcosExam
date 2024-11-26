@@ -17,8 +17,8 @@ categorize_currency <- function(data, value_col, window_size = 12, sd_threshold 
     data <- data %>%
         mutate(
             volatility = case_when(
-                rolling_sd < quantile(rolling_sd, 0.33, na.rm = TRUE) ~ "Low Volatility",
-                rolling_sd > quantile(rolling_sd, 0.67, na.rm = TRUE) ~ "High Volatility",
+                rolling_sd < quantile(rolling_sd, 0.15, na.rm = TRUE) ~ "Low Volatility",
+                rolling_sd > quantile(rolling_sd, 0.85, na.rm = TRUE) ~ "High Volatility",
                 TRUE ~ "Normal Volatility"
             )
         )

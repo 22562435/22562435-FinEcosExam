@@ -109,7 +109,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width 
 rm(list = ls())
 # Lets load in example data, and see how this can be stored and later called from your 'data' folder.
 source("code/install_and_load.R")
-install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra","xts"))
+install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra","xts","tbl2xts","ggridges"))
 
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 
@@ -131,8 +131,43 @@ Zar<-read_rds("data/Monthly_zar.rds")
 
 ```{r}
 Zar<- Zar %>% categorize_currency( value)
+# Load necessary libraries
+library(ggridges)
+library(dplyr)
+library(ggplot2)
 
-# View the modified dataset
+# Winsorize function
+winsorize <- function(x, lower = 0.0, upper = 0.95) {
+  quantiles <- quantile(x, probs = c(lower, upper), na.rm = TRUE)
+  x[x < quantiles[1]] <- quantiles[1]
+  x[x > quantiles[2]] <- quantiles[2]
+  return(x)
+}
+
+# Prepare data
+ridgeline_data <- ALSI %>%
+  inner_join(Zar, by = "date") %>%
+  select(date, J203, J403, volatility) %>%
+  mutate(
+    J203 = winsorize(J203),
+    J403 = winsorize(J403)
+  ) %>%
+  pivot_longer(cols = c(J203, J403), names_to = "Return_Type", values_to = "Return") %>%
+  mutate(volatility = factor(volatility, levels = c("Low Volatility","Normal Volatility", "High Volatility")))
+
+# Ridgeline plot
+ggplot(ridgeline_data, aes(x = Return, y = volatility, fill = Return_Type)) +
+  geom_density_ridges(alpha = 0.7, scale = 1) +
+  scale_fill_manual(values = c("J203" = "blue", "J403" = "green"), labels = c("ALSI Returns", "SWIX Returns")) +
+  labs(
+    title = "Distribution of Winsorized ALSI and SWIX Returns by Volatility Level",
+    x = "Return",
+    y = "Volatility Level",
+    fill = "Return Type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
 ```
 
 
@@ -241,70 +276,36 @@ ggplot(summary_data, aes(x = Size, fill = Sector)) +
 
 
 ```{r}
-# Calculate sector returns over time
-sector_time_data <- ALSI %>%
-  group_by(date, Sector) %>%
-  summarise(
-    ALSI_Return = sum(J203, na.rm = TRUE),
-    SWIX_Return = sum(J403, na.rm = TRUE)
-  ) %>%
-  pivot_longer(cols = c(ALSI_Return, SWIX_Return), names_to = "Index", values_to = "Return")
-
-# Plotting
-ggplot(sector_time_data, aes(x = date, y = Return, fill = Sector)) +
-  geom_area(position = "fill") +
-  facet_wrap(~ Index,ncol=1) +
-  labs(title = "Sector Exposure Over Time",
-       y = "Proportion of Returns",
-       fill = "Sector") +
-  fmxdat::theme_fmx() +
-  scale_fill_brewer(palette = "Set2")
-```
-
-
-
-```{r}
-evaluate_capped_index(ALSI, RebDays, capping_levels = c(0.05, 0.10, Inf),top_n = 100)
+ALSI %>%  plot_sector_exposure_over_time()
 
 ```
 
 ```{r}
-evaluate_capped_index(ALSI, RebDays, capping_levels = c(0.05, 0.10, Inf), SWIX = TRUE,top_n = 100)
+
+ALSI %>% filter(!is.na(Index_Name)) %>% plot_mean_returns_by_cap_size()
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
 
 
 ```{r}
-# Calculate cumulative returns for top N stocks
-top_n_stocks <- ALSI %>%
-  group_by(date) %>%
-  arrange(desc(J203)) %>%
-  slice(1:10) %>%
-  summarise(Total_ALSI_Return = sum(J203))
+analyze_capped_indexes(ALSI, RebDays, column = "J403", caps = c(0.05, 0.10))
 
-# Plotting
-ggplot(top_n_stocks, aes(x = date, y = Total_ALSI_Return)) +
-  geom_line(color = "blue") +
-  labs(title = "Cumulative Returns of Top N Stocks (ALSI)",
-       y = "Cumulative Returns") +
-  theme_minimal()
+
+
+
 ```
+
+
+```{r}
+analyze_capped_indexes(ALSI, RebDays, column = "J203", caps = c(0.05, 0.10))
+
+
+
+```
+
+
 
 

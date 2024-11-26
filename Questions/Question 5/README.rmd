@@ -17,8 +17,837 @@ Add binary files in bin, and closed R functions in code. Human Readable settings
 
 rm(list = ls()) # Clean your environment:
 gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
-library(tidyverse)
+source("code/install_and_load.R")
+install_and_load(c("tidyverse","zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","rugarch"))
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+
+
+
+cncy <- read_rds("data/currencies.rds")
+cncy_Carry <- read_rds("data/cncy_Carry.rds")
+cncy_value <- read_rds("data/cncy_value.rds")
+cncyIV <- read_rds("data/cncyIV.rds")
+bbdxy <- read_rds("data/bbdxy.rds")
 ```
 
+```{r}
+# Prepare data for ZAR, including log returns in the result
+zar_data <- cncy %>%
+  filter(Name == "SouthAfrica_Cncy") %>%
+  arrange(date) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na() %>%
+  mutate(Squared_Returns = log_return^2)
+
+# Convert to time-series format for GARCH model
+zar_xts <- tbl_xts(zar_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# Fit GARCH model and extract conditional volatility
+cond_vol_df <- fit_garch(zar_xts)
+
+
+# Plot comparison
+returns_df <- zar_data %>% select(date, Squared_Returns) %>% drop_na()
+plot_volatility_comparison(returns_df, cond_vol_df, filter_date = "2010-01-01")
+
+```
+
+
+
+
+```{r}
+# Define currencies
+selected_currencies <- c(
+  "SouthAfrica_Cncy", "Brazil_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
+  "Japan_Cncy", "UK_Cncy_Inv", "Canada_Cncy", "Bostwana_Cncy_Inv", "China_Cncy"
+)
+
+# Fit GARCH for multiple currencies
+volatility_df <- fit_garch_for_multiple_currencies(cncy, selected_currencies)
+
+# Plot volatility across currencies
+plot_volatility_across_currencies(volatility_df, highlight_currency = "SouthAfrica_Cncy", filter_date = "2015-01-01")
+
+```
+
+
+
+```{r}
+# 1. Data Preparation: Filter ZAR and Calculate Log Returns
+zar_data <- cncy %>%
+  filter(Name == "SouthAfrica_Cncy") %>%
+  arrange(date) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+# 2. Convert to Time Series Format
+zar_xts <- tbl_xts(zar_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# 3. Specify and Fit a GARCH(1,1) Model
+garch_spec <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+  distribution.model = "norm"
+)
+
+garch_fit <- ugarchfit(spec = garch_spec, data = zar_xts)
+
+# 4. Extract Conditional Volatility
+cond_vol <- sigma(garch_fit)
+cond_vol_df <- data.frame(Date = index(cond_vol), Volatility = cond_vol)
+
+# 5. Calculate Squared Returns
+zar_data <- zar_data %>%
+  mutate(Squared_Returns = log_return^2)
+
+# 6. Prepare Data for Plotting
+# Create a data frame for the squared returns
+returns_df <- zar_data %>%
+  select(date, Squared_Returns) %>%
+  drop_na() 
+
+# Define the date for filtering
+filter_date <- as.Date("2010-01-01")
+
+# Filter the data frames to include only dates after the specified date
+returns_df_filtered <- returns_df %>%
+  filter(as.Date(date) > filter_date)
+
+cond_vol_df_filtered <- cond_vol_df %>%
+  filter(as.Date(Date) > filter_date)
+
+# Create the ggplot with the filtered data
+gg <- ggplot() + 
+  geom_line(data = returns_df_filtered, aes(x = date, y = sqrt(Squared_Returns)), color = "blue3") + 
+  geom_line(data = cond_vol_df_filtered, aes(x = Date, y = Volatility), color = "red", size = 2, alpha = 0.75) + 
+  labs(
+    title = "Comparison: Returns Sigma vs Sigma from GARCH",
+    x = "Date",
+    y = "Comparison of Estimated Volatility"
+  ) +
+  theme_minimal()
+
+# Display the plot
+print(gg)
+
+
+```
+
+This figure directly illustrates the core concept of GARCH models: capturing time-varying volatility. By comparing the historical volatility (Returns Sigma) with the GARCH-predicted volatility (Sigma from GARCH), you can visually demonstrate:
+
+Volatility Clustering: GARCH models are particularly adept at capturing periods of high and low volatility, which are often clustered together. Your figure can highlight these clusters.
+Model Fit: The closer the two lines are, the better the GARCH model fits the data. Deviations between the lines can indicate periods where the model under- or overestimates volatility.
+Forecasting Power: If you've used the GARCH model to generate forecasts, you can include future predictions on the plot. This will show how well the model anticipates future volatility.
+
+
+
+```{r}
+# 1. Get a list of all unique currencies in the dataset
+selected_currencies <- c(
+  "SouthAfrica_Cncy", "Brazil_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
+  "Japan_Cncy", "UK_Cncy_Inv", "Canada_Cncy","Bostwana_Cncy_Inv","China_Cncy"
+)
+
+# 2. Filter and Calculate Log Returns for All Currencies
+currency_data <- cncy %>%
+  filter(Name %in% unique_currencies) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+
+# 3. Convert to Time Series Format
+currency_xts <- tbl_xts(currency_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# 4. Loop Through Each Currency and Fit GARCH Models
+volatility_data <- list()
+
+for (currency in selected_currencies) {
+  # Subset Data for Current Currency
+  currency_series <- currency_xts[, currency, drop = FALSE]
+  
+  # Ensure No Missing Values in Data
+  currency_series <- na.omit(currency_series)
+  
+  # Skip if Insufficient Data
+  if (nrow(currency_series) < 30) { # Adjust threshold as needed
+    message(paste("Skipping", currency, "due to insufficient data"))
+    next
+  }
+  
+  # Fit GARCH Model with Error Handling
+  tryCatch({
+    garch_spec <- ugarchspec(
+      variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+      mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+      distribution.model = "norm"
+    )
+    
+    garch_fit <- ugarchfit(spec = garch_spec, data = currency_series)
+    
+    # Extract Conditional Volatility
+    cond_vol <- sigma(garch_fit)
+    volatility_data[[currency]] <- data.frame(Date = index(cond_vol), Volatility = cond_vol, Currency = currency)
+  }, error = function(e) {
+    message(paste("Error fitting GARCH for", currency, ":", e$message))
+  })
+}
+
+# Combine Volatility Data
+volatility_df <- bind_rows(volatility_data)
+
+
+
+filter_date <- as.Date("2015-01-01")
+volatility_df_filtered <- volatility_df %>%
+  filter(as.Date(Date) > filter_date)
+
+
+
+
+
+# Create a grayscale color palette with different shades
+gray_palette <- colorRampPalette(c("gray80", "gray20"))(length(unique(volatility_df_filtered$Currency)) - 1)
+
+# Assign colors to each currency, ensuring "SouthAfrica_Cncy" remains red
+currency_colors <- c("SouthAfrica_Cncy" = "red4", setNames(gray_palette, unique(volatility_df_filtered$Currency)[-1]))
+
+# Plot with the new color palette
+ggplot(volatility_df_filtered, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line(size = 0.7, alpha = 0.75) +
+  scale_color_manual(values = currency_colors) +
+  labs(
+    title = "Time-Varying Conditional Volatility Across Selected Currencies",
+    subtitle = "ZAR Highlighted in Red, Other Currencies in Gray",
+    x = "",
+    y = "Volatility",
+    color = ""
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 12)
+  )
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# 1. Filter and Calculate Log Returns for Selected Currencies
+selected_currencies <- c("SouthAfrica_Cncy", "UK_Cncy_Inv", "EU_Cncy_Inv", "Japan_Cncy")
+
+currency_data <- cncy %>%
+  filter(Name %in% selected_currencies) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+# 2. Convert to Time Series Format
+currency_xts <- tbl_xts(currency_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# 3. Loop Through Each Currency and Fit GARCH Models
+volatility_data <- list()
+
+for (currency in selected_currencies) {
+  # Subset Data for Current Currency
+  currency_series <- currency_xts[, currency, drop = FALSE]
+  
+  # Fit GARCH Model
+  garch_spec <- ugarchspec(
+    variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+    mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+    distribution.model = "norm"
+  )
+  
+  garch_fit <- ugarchfit(spec = garch_spec, data = currency_series)
+  
+  # Extract Conditional Volatility
+  cond_vol <- sigma(garch_fit)
+  volatility_data[[currency]] <- data.frame(Date = index(cond_vol), Volatility = cond_vol, Currency = currency)
+}
+
+# Combine Volatility Data
+volatility_df <- bind_rows(volatility_data)
+
+# 4. Plot Conditional Volatility for All Currencies
+ggplot(volatility_df, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line() +
+  labs(title = "Comparison of Conditional Volatility Across Currencies",
+       x = "Date", y = "Volatility") +
+  theme_minimal()
+
+# 5. Summarize Volatility Statistics
+volatility_summary <- volatility_df %>%
+  group_by(Currency) %>%
+  summarise(
+    Mean_Volatility = mean(Volatility, na.rm = TRUE),
+    SD_Volatility = sd(Volatility, na.rm = TRUE),
+    Max_Volatility = max(Volatility, na.rm = TRUE)
+  )
+
+print(volatility_summary)
+
+```
+
+
+```{r}
+# 1. Define the Currencies to Include
+selected_currencies <- c(
+  "SouthAfrica_Cncy", "Nigeria_Cncy", "Ghana_Cncy", "Brazil_Cncy",
+  "Russia_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
+  "Japan_Cncy", "UK_Cncy_Inv", "Canada_Cncy"
+)
+
+# 2. Filter and Calculate Log Returns for Selected Currencies
+currency_data <- cncy %>%
+  filter(Name %in% selected_currencies) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+# 3. Convert to Time Series Format
+currency_xts <- tbl_xts(currency_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# 4. Loop Through Each Currency and Fit GARCH Models
+volatility_data <- list()
+
+for (currency in selected_currencies) {
+  # Subset Data for Current Currency
+  currency_series <- currency_xts[, currency, drop = FALSE]
+  
+  # Fit GARCH Model
+  garch_spec <- ugarchspec(
+    variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+    mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+    distribution.model = "norm"
+  )
+  
+  garch_fit <- ugarchfit(spec = garch_spec, data = currency_series)
+  
+  # Extract Conditional Volatility
+  cond_vol <- sigma(garch_fit)
+  volatility_data[[currency]] <- data.frame(Date = index(cond_vol), Volatility = cond_vol, Currency = currency)
+}
+
+# Combine Volatility Data
+volatility_df <- bind_rows(volatility_data)
+
+# 5. Plot Conditional Volatility for All Currencies
+ggplot(volatility_df, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line() +
+  labs(title = "Comparison of Conditional Volatility Across Selected Currencies",
+       x = "Date", y = "Volatility") +
+  theme_minimal()
+
+# 6. Summarize Volatility Statistics
+volatility_summary <- volatility_df %>%
+  group_by(Currency) %>%
+  summarise(
+    Mean_Volatility = mean(Volatility, na.rm = TRUE),
+    SD_Volatility = sd(Volatility, na.rm = TRUE),
+    Max_Volatility = max(Volatility, na.rm = TRUE)
+  )
+
+print(volatility_summary)
+
+```
+
+
+```{r}
+# 1. Define the Currencies to Include
+selected_currencies <- c(
+  "SouthAfrica_Cncy", "Ghana_Cncy", "Brazil_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
+  "Japan_Cncy", "UK_Cncy_Inv", "Canada_Cncy"
+)
+
+# 2. Filter and Calculate Log Returns for Selected Currencies
+currency_data <- cncy %>%
+  filter(Name %in% selected_currencies) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+# 3. Convert to Time Series Format
+currency_xts <- tbl_xts(currency_data, cols_to_xts = "log_return", spread_by = "Name")
+# 4. Loop Through Each Currency and Fit GARCH Models
+volatility_data <- list()
+
+for (currency in selected_currencies) {
+  # Subset Data for Current Currency
+  currency_series <- currency_xts[, currency, drop = FALSE]
+  
+  # Ensure No Missing Values in Data
+  currency_series <- na.omit(currency_series)
+  
+  # Skip if Insufficient Data
+  if (nrow(currency_series) < 30) { # Adjust threshold as needed
+    message(paste("Skipping", currency, "due to insufficient data"))
+    next
+  }
+  
+  # Fit GARCH Model with Error Handling
+  tryCatch({
+    garch_spec <- ugarchspec(
+      variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+      mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+      distribution.model = "norm"
+    )
+    
+    garch_fit <- ugarchfit(spec = garch_spec, data = currency_series)
+    
+    # Extract Conditional Volatility
+    cond_vol <- sigma(garch_fit)
+    volatility_data[[currency]] <- data.frame(Date = index(cond_vol), Volatility = cond_vol, Currency = currency)
+  }, error = function(e) {
+    message(paste("Error fitting GARCH for", currency, ":", e$message))
+  })
+}
+
+# Combine Volatility Data
+volatility_df <- bind_rows(volatility_data)
+
+# 5. Plot Conditional Volatility for All Currencies
+ggplot(volatility_df, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line() +
+  labs(title = "Comparison of Conditional Volatility Across Selected Currencies",
+       x = "Date", y = "Volatility") +
+  theme_minimal()
+
+# 6. Summarize Volatility Statistics
+volatility_summary <- volatility_df %>%
+  group_by(Currency) %>%
+  summarise(
+    Mean_Volatility = mean(Volatility, na.rm = TRUE),
+    SD_Volatility = sd(Volatility, na.rm = TRUE),
+    Max_Volatility = max(Volatility, na.rm = TRUE)
+  )
+
+print(volatility_summary)
+
+```
+
+```{r}
+# Add vertical lines for key events, e.g., Global Financial Crisis, COVID-19
+key_events <- data.frame(
+  Event = c("Global Financial Crisis", "COVID-19"),
+  Date = as.Date(c("2008-09-15", "2020-03-01"))
+)
+filter_date <- as.Date("2015-01-01")
+volatility_df_filtered <- volatility_df %>%
+  filter(as.Date(Date) > filter_date)
+
+ggplot(volatility_df_filtered, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line(size = 0.7,alpha=0.7) +
+  geom_vline(data = key_events, aes(xintercept = Date, linetype = Event), color = "gray", size = 0.8) +
+  labs(
+    title = "Time-Varying Conditional Volatility Across Currencies",
+    subtitle = "Highlighting South Africa (ZAR) with Key Economic Events",
+    x = "",
+    y = "Volatility",
+    color = "Currency",
+    linetype = "Event"
+  ) +
+  scale_color_manual(
+    values = c(
+      "SouthAfrica_Cncy" = "black",
+      "Australia_Cncy_Inv" = "blue",
+      "Brazil_Cncy" = "blue2",
+      "Canada_Cncy" = "blue3",
+      "EU_Cncy_Inv" = "blue4",
+      "Ghana_Cncy" = "deeppink",
+      "Japan_Cncy" = "deeppink2",
+      "UK_Cncy_Inv" = "deeppink3"
+    )
+  ) +
+  fmxdat::theme_fmx() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)
+  )
+```
+
+
+```{r}
+# 1. Get a list of all unique currencies in the dataset
+unique_currencies <- unique(cncy$Name)
+
+# 2. Filter and Calculate Log Returns for All Currencies
+currency_data <- cncy %>%
+  filter(Name %in% unique_currencies) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+# 3. Convert to Time Series Format
+currency_xts <- tbl_xts(currency_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# 4. Loop Through Each Currency and Fit GARCH Models
+volatility_data <- list()
+
+for (currency in unique_currencies) {
+  # Subset Data for Current Currency
+  currency_series <- currency_xts[, currency, drop = FALSE]
+  
+  # Ensure No Missing Values in Data
+  currency_series <- na.omit(currency_series)
+  
+  # Skip if Insufficient Data
+  if (nrow(currency_series) < 30) { # Adjust threshold as needed
+    message(paste("Skipping", currency, "due to insufficient data"))
+    next
+  }
+  
+  # Fit GARCH Model with Error Handling
+  tryCatch({
+    garch_spec <- ugarchspec(
+      variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+      mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+      distribution.model = "norm"
+    )
+    
+    garch_fit <- ugarchfit(spec = garch_spec, data = currency_series)
+    
+    # Extract Conditional Volatility
+    cond_vol <- sigma(garch_fit)
+    volatility_data[[currency]] <- data.frame(Date = index(cond_vol), Volatility = cond_vol, Currency = currency)
+  }, error = function(e) {
+    message(paste("Error fitting GARCH for", currency, ":", e$message))
+  })
+}
+
+# Combine Volatility Data
+volatility_df <- bind_rows(volatility_data)
+
+# 5. Plot Conditional Volatility for All Currencies
+ggplot(volatility_df, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Time-Varying Conditional Volatility Across All Currencies",
+    subtitle = "Comparing Volatility for Every Currency in the Dataset",
+    x = "Date",
+    y = "Volatility",
+    color = "Currency"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 12)
+  )
+
+# 6. Summarize Volatility Statistics
+volatility_summary <- volatility_df %>%
+  group_by(Currency) %>%
+  summarise(
+    Mean_Volatility = mean(Volatility, na.rm = TRUE),
+    SD_Volatility = sd(Volatility, na.rm = TRUE),
+    Max_Volatility = max(Volatility, na.rm = TRUE)
+  )
+
+print(volatility_summary)
+
+
+```
+
+
+```{r}
+# 1. Get a list of all unique currencies in the dataset
+unique_currencies <- unique(cncy$Name)
+
+# 2. Filter and Calculate Log Returns for All Currencies
+currency_data <- cncy %>%
+  filter(Name %in% unique_currencies) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+# 3. Convert to Time Series Format
+currency_xts <- tbl_xts(currency_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# 4. Loop Through Each Currency and Fit GARCH Models
+volatility_data <- list()
+
+for (currency in unique_currencies) {
+  # Subset Data for Current Currency
+  currency_series <- currency_xts[, currency, drop = FALSE]
+  
+  # Ensure No Missing Values in Data
+  currency_series <- na.omit(currency_series)
+  
+  # Skip if Insufficient Data
+  if (nrow(currency_series) < 30) { # Adjust threshold as needed
+    message(paste("Skipping", currency, "due to insufficient data"))
+    next
+  }
+  
+  # Fit GARCH Model with Error Handling
+  tryCatch({
+    garch_spec <- ugarchspec(
+      variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+      mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+      distribution.model = "norm"
+    )
+    
+    garch_fit <- ugarchfit(spec = garch_spec, data = currency_series)
+    
+    # Extract Conditional Volatility
+    cond_vol <- sigma(garch_fit)
+    volatility_data[[currency]] <- data.frame(Date = index(cond_vol), Volatility = cond_vol, Currency = currency)
+  }, error = function(e) {
+    message(paste("Error fitting GARCH for", currency, ":", e$message))
+  })
+}
+
+# Combine Volatility Data
+volatility_df <- bind_rows(volatility_data)
+
+# 5. Calculate Mean Volatility for Each Currency and Remove the Top 3 Volatile Currencies
+volatility_summary <- volatility_df %>%
+  group_by(Currency) %>%
+  summarise(
+    Mean_Volatility = mean(Volatility, na.rm = TRUE)
+  )
+
+# Identify and remove top 3 most volatile currencies
+top_3_currencies <- volatility_summary %>%
+  arrange(desc(Mean_Volatility)) %>%
+  head(3) %>%
+  pull(Currency)
+
+# Filter out the top 3 volatile currencies
+volatility_df_filtered <- volatility_df %>%
+  filter(!Currency %in% top_3_currencies)
+
+# 6. Plot Conditional Volatility for All Currencies with Customizations
+ggplot(volatility_df_filtered, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line(size = 1) +
+  scale_color_manual(values = rep("gray", length(unique(volatility_df_filtered$Currency)))) +  # All currencies in gray
+  scale_color_manual(values = c("SouthAfrica_Cncy" = "red")) +  # ZAR (South Africa) in red
+  labs(
+    title = "Time-Varying Conditional Volatility Across All Currencies",
+    subtitle = "ZAR Highlighted in Red, Other Currencies in Gray",
+    x = "Date",
+    y = "Volatility",
+    color = "Currency"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # Hide the legend
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 12),
+    axis.text.x = element_blank(),  # Hide x-axis labels
+    axis.text.y = element_blank()   # Hide y-axis labels
+  ) 
+
+```
+
+
+
+```{r}
+
+
+# 1. Get a list of all unique currencies in the dataset
+selected_currencies <- c(
+  "SouthAfrica_Cncy", "Ghana_Cncy", "Brazil_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
+  "Japan_Cncy", "UK_Cncy_Inv", "Canada_Cncy"
+)
+
+# 2. Filter and Calculate Log Returns for All Currencies
+currency_data <- cncy %>%
+  filter(Name %in% unique_currencies) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na()
+
+
+# 3. Convert to Time Series Format
+currency_xts <- tbl_xts(currency_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# 4. Loop Through Each Currency and Fit GARCH Models
+volatility_data <- list()
+
+for (currency in selected_currencies) {
+  # Subset Data for Current Currency
+  currency_series <- currency_xts[, currency, drop = FALSE]
+  
+  # Ensure No Missing Values in Data
+  currency_series <- na.omit(currency_series)
+  
+  # Skip if Insufficient Data
+  if (nrow(currency_series) < 30) { # Adjust threshold as needed
+    message(paste("Skipping", currency, "due to insufficient data"))
+    next
+  }
+  
+  # Fit GARCH Model with Error Handling
+  tryCatch({
+    garch_spec <- ugarchspec(
+      variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+      mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+      distribution.model = "norm"
+    )
+    
+    garch_fit <- ugarchfit(spec = garch_spec, data = currency_series)
+    
+    # Extract Conditional Volatility
+    cond_vol <- sigma(garch_fit)
+    volatility_data[[currency]] <- data.frame(Date = index(cond_vol), Volatility = cond_vol, Currency = currency)
+  }, error = function(e) {
+    message(paste("Error fitting GARCH for", currency, ":", e$message))
+  })
+}
+
+# Combine Volatility Data
+volatility_df <- bind_rows(volatility_data)
+
+# 5. Calculate Mean Volatility for Each Currency and Remove the Top 3 Volatile Currencies
+# volatility_summary <- volatility_df %>%
+#   group_by(Currency) %>%
+#   summarise(
+#     Mean_Volatility = mean(Volatility, na.rm = TRUE)
+#   )
+# 
+# # # Identify and remove top 3 most volatile currencies
+# # top_3_currencies <- volatility_summary %>%
+# #   arrange(desc(Mean_Volatility)) %>%
+# #   head(5) %>%
+# #   pull(Currency)
+# 
+# 
+# top_3_currencies <- volatility_df %>%
+#   group_by(Currency) %>%
+#   summarize(Max_Volatility = max(Volatility, na.rm = TRUE)) %>%
+#   arrange(desc(Max_Volatility)) %>%
+#   head(10) %>%
+#   pull(Currency)
+# 
+# # Filter out the top 3 most volatile currencies
+# volatility_df_filtered <- volatility_df %>%
+#   filter(!Currency %in% top_3_currencies) %>%
+#   filter(as.Date(Date) > filter_date)
+# # Filter out the top 3 volatile currencies
+
+filter_date <- as.Date("2015-01-01")
+volatility_df_filtered <- volatility_df %>%
+  filter(as.Date(Date) > filter_date)
+
+
+
+
+
+# Create a grayscale color palette with different shades
+gray_palette <- colorRampPalette(c("gray80", "gray20"))(length(unique(volatility_df_filtered$Currency)) - 1)
+
+# Assign colors to each currency, ensuring "SouthAfrica_Cncy" remains red
+currency_colors <- c("SouthAfrica_Cncy" = "yellow", setNames(gray_palette, unique(volatility_df_filtered$Currency)[-1]))
+
+# Plot with the new color palette
+ggplot(volatility_df_filtered, aes(x = Date, y = Volatility, color = Currency)) +
+  geom_line(size = 0.7, alpha = 0.75) +
+  scale_color_manual(values = currency_colors) +
+  labs(
+    title = "Time-Varying Conditional Volatility Across Selected Currencies",
+    subtitle = "ZAR Highlighted in Red, Other Currencies in Gray",
+    x = "",
+    y = "Volatility",
+    color = "Currency"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 12)
+  )
+  # ) +
+  # geom_text(data = subset(volatility_df_filtered, Currency == "SouthAfrica_Cncy"), 
+  #           aes(label = Currency), color = "red", size = 3, vjust = -1)
+
+
+
+# 
+# # 6. Plot Conditional Volatility for Selected Currencies with Customizations
+# ggplot(volatility_df_filtered, aes(x = Date, y = Volatility, color = Currency)) +
+#   geom_line(size = 0.7,alpha=0.75) +
+#   scale_color_manual(values = c(
+#     "SouthAfrica_Cncy" = "red" 
+#     
+#   )) +  # Assign colors to each currency
+#   labs(
+#     title = "Time-Varying Conditional Volatility Across Selected Currencies",
+#     subtitle = "ZAR Highlighted in Red, Other Currencies in Gray",
+#     x = "",
+#     y = "Volatility",
+#     color = "Currency"
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     legend.position = "none",  # Position the legend at the bottom
+#     plot.title = element_text(size = 14, face = "bold"),
+#     plot.subtitle = element_text(size = 10),
+#     axis.text = element_text(size = 8),
+#     axis.title = element_text(size = 12)
+#   )
+
+```
 
