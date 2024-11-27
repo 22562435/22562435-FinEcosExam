@@ -8,7 +8,7 @@ output: powerpoint_presentation
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width=8, fig.height=6, fig.align='center', fig.pos="H", fig.pos = 'H')
 rm(list = ls()) # Clean your environment:
 gc() 
 source("code/install_and_load.R")
@@ -25,7 +25,7 @@ BM_Rets <- read_rds("data/BM_Rets.rds")
 ```
 
 
-```{r}
+```{r data-wrangling, include=FALSE}
 # Pipeline to merge, process, and calculate rolling metrics
 tidy_data <- merge_and_prepare_returns_data(Port_Rets, BM_Rets) %>%
   convert_returns_data_to_xts() %>%
@@ -39,20 +39,23 @@ tidy_data <- merge_and_prepare_returns_data(Port_Rets, BM_Rets) %>%
     create_tidy_data_for_plotting(rolling_te, rolling_dd)
   }
 
-tidy_data %>% plot_tidy_data_over_time(title = "Tracking Error and Downside Risk Over Time")
 ```
 
 
+---
 
+## Relative Risk
 
+```{r plot-TE-and_DE}
 
+tidy_data %>% plot_tidy_data_over_time(title = "Tracking Error and Downside Risk Over Time")
+```
 
+---
 
+## Relative Performance 
 
-
-
-
-```{r}
+```{r cum-returns-Port-and-BM}
 merge_and_prepare_returns_data(Port_Rets, BM_Rets) %>%  
 chart.CumReturns(
   
@@ -65,16 +68,32 @@ chart.CumReturns(
 ```
 
 
+---
 
-```{r}
+## Fund Positioning
+
+```{r sector-treemap-current}
+create_treemap(Port_Holds, BM_Holds, N = 0)
+```
+
+
+---
+
+Resources holdings spike at the begining of 2020
+
+```{r sector-composition-over-time}
 create_sector_area_graph(Port_Holds, BM_Holds)
 ```
 
+---
 
 
-```{r}
-create_treemap(Port_Holds, BM_Holds, N = 10)
+We see that at the beginning of 2020 the Portfolio was dominated by Glencore PLC 
+
+```{r sector-treemap-ats-pike}
+create_treemap(Port_Holds, BM_Holds, N = 0,date=as.Date("31/01/2020", format = "%d/%m/%Y"))
 ```
+
 
 
 

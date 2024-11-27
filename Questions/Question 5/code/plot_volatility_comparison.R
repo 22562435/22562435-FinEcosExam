@@ -12,5 +12,5 @@ plot_volatility_comparison <- function(returns_df, cond_vol_df, filter_date = NU
             x = "Date",
             y = "Comparison of Estimated Volatility"
         ) +
-        theme_minimal()
+        fmxdat::theme_fmx()
 }

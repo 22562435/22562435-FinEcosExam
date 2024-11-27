@@ -19,7 +19,7 @@ plot_volatility_across_currencies <- function(volatility_df, highlight_currency 
             y = "Volatility",
             color = ""
         ) +
-        theme_minimal() +
+        fmxdat::theme_fmx() +
         theme(
             legend.position = "bottom",
             plot.title = element_text(size = 14, face = "bold"),
