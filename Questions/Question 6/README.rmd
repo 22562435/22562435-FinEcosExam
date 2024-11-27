@@ -17,8 +17,419 @@ Add binary files in bin, and closed R functions in code. Human Readable settings
 
 rm(list = ls()) # Clean your environment:
 gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
-library(tidyverse)
+
+source("code/install_and_load.R")
+install_and_load(c("tidyverse","zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","quadprog","lubridate", "RiskPortfolios"))
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+
+
+
+
+MAA <- read_rds("data/MAA.rds")
+msci <- read_rds("data/msci.rds") %>%
+filter(Name %in% c("MSCI_ACWI", "MSCI_USA", "MSCI_RE", "MSCI_Jap")) %>% rename(Ticker=Name)
+
+
 ```
 
+
+```{r}
+# Function to compute monthly returns
+calculate_monthly_returns <- function(data) {
+  data %>%
+    group_by(Ticker) %>%
+    arrange(date) %>%
+    mutate(Month = floor_date(date, "month"),
+           Monthly_Return = (Price / lag(Price) - 1)) %>%
+    filter(!is.na(Monthly_Return)) %>%
+    select(Ticker, Month, Monthly_Return) %>%
+    ungroup()
+}
+
+# Function to reshape data into a return matrix
+prepare_return_matrix <- function(data) {
+  data %>%
+    pivot_wider(names_from = Ticker, values_from = Monthly_Return) %>%
+    arrange(Month) %>%
+    rename(date = Month)  # Rename to 'date' directly for compatibility
+}
+
+
+
+```
+
+
+```{r}
+prepare_return_matrix <- function(data) {
+  data %>%
+    # Aggregate duplicates by averaging the returns for each Month and Ticker
+    group_by(Month, Ticker) %>%
+    summarise(Monthly_Return = mean(Monthly_Return, na.rm = TRUE), .groups = "drop") %>%
+    # Pivot wider to create the return matrix
+    pivot_wider(names_from = Ticker, values_from = Monthly_Return) %>%
+    arrange(Month)  # Ensure the data is arranged by Month
+}
+
+```
+
+```{r}
+
+# Calculate monthly returns for each dataset
+maa_returns <- calculate_monthly_returns(MAA)
+msci_returns <- calculate_monthly_returns(msci)
+
+# Combine the datasets
+all_returns <- bind_rows(maa_returns, msci_returns)
+
+# Prepare the return matrix
+return_matrix <- prepare_return_matrix(all_returns)
+
+return_matrix_clean <- return_matrix %>%
+  na.omit()
+
+
+
+
+
+
+```
+
+
+```{r}
+calculate_covariance_matrix <- function(return_matrix_clean) {
+  # Calculate the covariance matrix of asset returns
+  cov_matrix <- cov(return_matrix_clean, use = "complete.obs")  # Use only complete observations (non-NA)
+  return(cov_matrix)
+}
+
+```
+
+
+```{r}
+calculate_expected_returns <- function(return_matrix_clean) {
+  # Calculate the mean return for each asset (column)
+  expected_returns <- colMeans(return_matrix_clean, na.rm = TRUE)
+  return(expected_returns)
+}
+
+```
+
+```{r}
+library(quadprog)
+
+optimize_portfolio <- function(return_matrix_clean) {
+  # Calculate covariance matrix and expected returns
+  cov_matrix <- calculate_covariance_matrix(return_matrix_clean)
+  expected_returns <- calculate_expected_returns(return_matrix_clean)
+
+  # Number of assets
+  n_assets <- length(expected_returns)
+  
+  # Define constraints
+  Dmat <- 2 * cov_matrix  # Objective function's quadratic term (maximize return with risk)
+  dvec <- rep(0, n_assets)  # Linear term (no linear preference, hence zeros)
+  
+  # Equality constraint: weights sum to 1
+  Amat <- matrix(1, nrow = 1, ncol = n_assets)
+  bvec <- 1
+  
+  # Lower bound: no shorting (weights >= 0)
+  lower_bounds <- rep(0, n_assets)
+  
+  # Run quadratic programming optimization
+  solution <- solve.QP(Dmat, dvec, Amat, bvec, meq = 1, factorize = TRUE)
+  
+  # Extract optimized weights
+  optimal_weights <- solution$solution
+  
+  return(optimal_weights)
+}
+
+```
+
+
+
+```{r}
+return_matrix_clean_numeric <- return_matrix_clean %>%
+  select(-Month)
+
+```
+
+
+```{r}
+return_matrix_clean_numeric <- data.matrix(return_matrix_clean_numeric)
+
+```
+
+
+
+
+
+
+```{r}
+# Number of assets
+m <- ncol(return_matrix_clean_numeric)
+
+# Define the objective function (0 vector)
+dvec <- rep(0, m)
+
+# Define the equality constraint matrix (sum of weights = 1)
+Amat <- matrix(1, nrow = 1, ncol = m)
+
+# Define the right-hand side of the equality constraint (sum(weights) = 1)
+bvec <- 1
+
+# Run the optimization
+optimal_weights <- solve.QP(Dmat = cov(return_matrix_clean_numeric), 
+                            dvec = dvec, 
+                            Amat = Amat, 
+                            bvec = bvec, 
+                            meq = 1)
+optimal_weights$solution
+
+```
+
+```{r}
+dim(Amat)
+length(dvec)
+
+```
+
+
+
+
+```{r}
+optimal_weights <- optimize_portfolio(return_matrix_clean_numeric)
+optimal_weights
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+optimal_weights <- optimize_portfolio(return_matrix_clean)
+optimal_weights
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Load necessary libraries
+pacman::p_load(tidyverse, lubridate)
+
+# Function to filter series based on start date and available data
+filter_valid_series <- function(data, min_date, min_obs = 3 * 12) {
+  data %>%
+    group_by(Ticker) %>%
+    filter(date >= min_date) %>%
+    summarise(n_obs = n(), .groups = "drop") %>%
+    filter(n_obs >= min_obs) %>%
+    pull(Ticker)
+}
+
+# Function to clean and prepare raw data
+prepare_data <- function(data, min_date, impute_method = "NONE", min_obs = 36) {
+  # Filter out invalid series
+  valid_tickers <- filter_valid_series(data, min_date, min_obs)
+  
+  # Filter original data for valid tickers
+  clean_data <- data %>%
+    filter(Ticker %in% valid_tickers) %>%
+    select(date, Ticker, Price) %>%
+    group_by(Ticker) %>%
+    arrange(date) %>%
+    mutate(Return = (Price / lag(Price)) - 1) %>%
+    ungroup()
+  
+  # Impute missing returns using provided function
+  imputed_data <- impute_missing_returns(
+    clean_data %>%
+      select(date, Ticker, Return) %>%
+      pivot_wider(names_from = Ticker, values_from = Return),
+    impute_returns_method = impute_method
+  )
+  
+  imputed_data %>%
+    pivot_longer(-date, names_to = "Ticker", values_to = "Return")
+}
+
+# Function to convert daily returns to monthly returns
+convert_to_monthly <- function(data) {
+  data %>%
+    group_by(Ticker) %>%
+    mutate(Month = floor_date(date, "month")) %>%
+    group_by(Ticker, Month) %>%
+    summarise(Monthly_Return = prod(1 + Return, na.rm = TRUE) - 1, .groups = "drop")
+}
+
+
+```
+```{r}
+# Assuming MAA and msci data are already loaded as tibbles
+StartDate <- ymd(20100101)
+
+# Prepare MAA data
+prepared_MAA <- prepare_data(MAA, StartDate, impute_method = "Drawn_Distribution_Collective")
+
+# Prepare MSCI data
+prepared_msci <- prepare_data(msci, StartDate, impute_method = "Drawn_Distribution_Collective")
+
+# Combine the prepared data
+combined_data <- bind_rows(prepared_MAA, prepared_msci)
+
+# Convert to monthly returns
+monthly_data <- convert_to_monthly(combined_data)
+
+# Inspect the result
+head(monthly_data)
+
+```
+
+
+```{r}
+# Calculate active returns
+calculate_active_returns <- function(returns_data, benchmark_data) {
+  returns_data %>%
+    left_join(benchmark_data, by = "Month", suffix = c("_index", "_benchmark")) %>%
+    mutate(Active_Return = Monthly_Return_index - Monthly_Return_benchmark) %>%
+    select(Ticker, Month, Active_Return)
+}
+
+```
+
+```{r}
+apply_rolling_tracking_error <- function(active_returns_data, width = 12) {
+  active_returns_data %>%
+    group_by(Ticker) %>%
+    mutate(Rolling_Tracking_Error = calculate_rolling_tracking_error(Active_Return, width)) %>%
+    ungroup()
+}
+
+```
+
+
+```{r}
+# Plot rolling tracking error
+library(ggplot2)
+
+plot_tracking_error <- function(tracking_error_data) {
+  ggplot(tracking_error_data, aes(x = Month, y = Rolling_Tracking_Error, color = Ticker)) +
+    geom_line() +
+    theme_minimal() +
+    labs(
+      title = "Rolling Tracking Error",
+      x = "Month",
+      y = "Tracking Error (SD)",
+      color = "Ticker"
+    )
+}
+
+```
+
+```{r}
+library(dplyr)
+
+# Sample data: returns_data and benchmark_data
+# returns_data <- tibble(
+#   Ticker = c("ADXY Index", "ADXY Index", "ADXY Index", "OTHER Index", "OTHER Index"),
+#   Month = as.Date(c("2002-01-01", "2002-02-01", "2002-03-01", "2002-01-01", "2002-02-01")),
+#   Monthly_Return = c(0.00356, -0.000628, 0.00105, 0.005, -0.001)
+# )
+# 
+# benchmark_data <- tibble(
+#   Month = as.Date(c("2002-01-01", "2002-02-01", "2002-03-01")),
+#   Monthly_Return = c(0.002, -0.001, 0.0015)
+# )
+
+# Function to calculate active returns
+calculate_active_returns <- function(returns_data, benchmark_data) {
+  returns_data %>%
+    left_join(benchmark_data, by = "Month", suffix = c("_index", "_benchmark")) %>%
+    mutate(Active_Return = Monthly_Return_index - Monthly_Return_benchmark) %>%
+    select(Ticker, Month, Active_Return)
+}
+
+active_returns_data <- calculate_active_returns(returns_data, benchmark_data)
+print(active_returns_data)
+
+```
+
+
+
+```{r}
+# Step 1: Calculate Active Returns
+calculate_active_returns <- function(returns_data, benchmark_data) {
+  returns_data %>%
+    left_join(benchmark_data, by = "Month", suffix = c("_index", "_benchmark")) %>%
+    mutate(Active_Return = Monthly_Return_index - Monthly_Return_benchmark) %>%
+    select(Ticker, Month, Active_Return)
+}
+
+# Assuming benchmark_data is a subset of returns_data
+benchmark_data <- returns_data %>% filter(Ticker == "Benchmark Ticker") %>% select(Month, Monthly_Return)
+
+# Calculate active returns using the provided data
+active_returns_data <- calculate_active_returns(returns_data, benchmark_data)
+
+# Step 2: Apply Rolling Tracking Error
+apply_rolling_tracking_error <- function(active_returns_data, width = 12) {
+  active_returns_data %>%
+    group_by(Ticker) %>%
+    mutate(Rolling_Tracking_Error = calculate_rolling_tracking_error(Active_Return, width)) %>%
+    ungroup()
+}
+
+# Calculate rolling tracking error with your desired width
+tracking_error_data <- apply_rolling_tracking_error(active_returns_data, width = 12)
+
+# Step 3: Plot Rolling Tracking Error
+plot_tracking_error <- function(tracking_error_data) {
+  ggplot(tracking_error_data, aes(x = Month, y = Rolling_Tracking_Error, color = Ticker)) +
+    geom_line() +
+    theme_minimal() +
+    labs(
+      title = "Rolling Tracking Error",
+      x = "Month",
+      y = "Tracking Error (SD)",
+      color = "Ticker"
+    )
+}
+
+# Generate the plot
+plot_tracking_error(
+
+```
 
