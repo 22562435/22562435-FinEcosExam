@@ -19,7 +19,7 @@ rm(list = ls()) # Clean your environment:
 gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
 
 source("code/install_and_load.R")
-install_and_load(c("tidyverse","zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","quadprog","lubridate", "RiskPortfolios"))
+install_and_load(c("tidyverse","zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","quadprog","lubridate", "RiskPortfolios","osqp"))
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 
 
@@ -31,6 +31,1001 @@ filter(Name %in% c("MSCI_ACWI", "MSCI_USA", "MSCI_RE", "MSCI_Jap")) %>% rename(T
 
 
 ```
+
+
+```{r}
+# Libraries
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(osqp)
+library(Matrix)
+
+# Create asset mapping based on the provided table
+asset_mapping <- tibble::tibble(
+  Ticker = c(
+    "M2WD Index", "M2WO Index", "M2EF Index", "M2US Index", "M8EU Index", 
+    "M8JP Index", "M1AP Index", "LGAGTRUH Index", "LUAGTRUU Index", 
+    "LEATTREU Index", "LGCPTRUH Index", "LUACTRUU Index", "LP05TREH Index", 
+    "ADXY Index", "DXY Index", "BCOMTR Index"
+  ),
+  AssetClass = c(
+    "Equity", "Equity", "Equity", "Equity", "Equity", "Equity", "Equity", 
+    "Rates", "Rates", "Rates", "Credit", "Credit", "Credit", 
+    "Asian currency", "USD", "Commodity"
+  )
+)
+
+# Filter and align datasets
+MAA_filtered <- MAA %>%
+  filter(date >= as.Date("2002-01-01")) %>%
+  select(date, Ticker, Price)
+
+msci_filtered <- msci %>%
+  filter(date >= as.Date("2002-01-01"))
+
+# Combine datasets
+combined_data <- bind_rows(MAA_filtered, msci_filtered)
+
+# Filter tickers based on asset_mapping
+combined_data <- combined_data %>%
+  filter(Ticker %in% asset_mapping$Ticker)
+
+# Pivot to wide format for return calculations
+wide_data <- combined_data %>%
+  pivot_wider(names_from = Ticker, values_from = Price)
+
+# Calculate monthly returns
+return_matrix <- wide_data %>%
+  arrange(date) %>%
+  mutate(across(-date, ~ (. / lag(.)) - 1)) %>%
+  filter(!is.na(date)) %>%
+  select(-date)
+
+# Clean up: Remove assets with less than 3 years of returns
+return_matrix_clean <- return_matrix %>%
+  select(where(~ sum(!is.na(.)) >= 36)) %>%
+  na.omit()
+
+# Calculate covariance matrix
+cov_matrix <- cov(return_matrix_clean)
+mean_returns <- colMeans(return_matrix_clean)
+
+# Optimization Model Setup
+n_assets <- ncol(return_matrix_clean)
+
+# Quadratic problem inputs
+Q <- Matrix(cov_matrix, sparse = TRUE)  # Covariance matrix
+c <- -mean_returns                      # Mean returns (negated for maximization)
+
+# Constraints
+# Dynamically create equity and rates constraints
+equity_mask <- as.integer(colnames(return_matrix_clean) %in% 
+                            asset_mapping$Ticker[asset_mapping$AssetClass == "Equity"])
+rates_mask <- as.integer(colnames(return_matrix_clean) %in% 
+                           asset_mapping$Ticker[asset_mapping$AssetClass == "Rates"])
+
+# Constraint matrix (Amat)
+Amat <- rbind(
+  rep(1, n_assets),        # Sum-to-1 constraint
+  diag(n_assets),          # Non-negativity (weights >= 0)
+  equity_mask,             # Equity constraint (≤ 60%)
+  rates_mask,              # Rates constraint (≤ 25%)
+  diag(n_assets)           # Single asset constraint (≤ 40%)
+)
+
+# Bounds
+l <- c(1, rep(0, n_assets), 0, 0, rep(0, n_assets))  # Lower bounds
+u <- c(1, rep(Inf, n_assets), 0.60, 0.25, rep(0.40, n_assets))  # Upper bounds
+
+# OSQP Model
+model <- osqp::osqp(
+  P = Q,
+  q = c,
+  A = Matrix(Amat, sparse = TRUE),
+  l = l,
+  u = u
+)
+
+# Solve the optimization problem
+result <- model$solve()
+
+# Extract optimal weights
+optimal_weights <- result$x
+
+# Check results
+print(optimal_weights)
+sum(optimal_weights)  # Should be close to 1
+print(optimal_weights[optimal_weights > 0.4])  # Check for violations
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Libraries
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(osqp)
+library(Matrix)
+
+# Filter and align both datasets
+MAA_filtered <- MAA %>%
+  filter(date >= as.Date("2002-01-01")) %>%
+  select(date, Ticker, Price)  # Exclude Name
+
+msci_filtered <- msci %>%
+  filter(date >= as.Date("2002-01-01"))  # Align start date with MAA
+
+# Combine datasets
+combined_data <- bind_rows(MAA_filtered, msci_filtered)
+
+# Ensure unique tickers align between MAA and MSCI
+combined_data <- combined_data %>%
+  distinct()  # Remove duplicate rows if any
+
+# Pivot to wide format for return calculations
+wide_data <- combined_data %>%
+  pivot_wider(names_from = Ticker, values_from = Price)
+
+# Calculate monthly returns
+return_matrix <- wide_data %>%
+  arrange(date) %>%
+  mutate(across(-date, ~ (. / lag(.)) - 1)) %>%
+  filter(!is.na(date)) %>%  # Remove rows with missing dates
+  select(-date)            # Remove the date column
+
+# Clean up: Remove assets with less than 3 years of returns
+return_matrix_clean <- return_matrix %>%
+  select(where(~ sum(!is.na(.)) >= 36)) %>%
+  na.omit()
+
+# Calculate covariance matrix
+cov_matrix <- cov(return_matrix_clean)
+mean_returns <- colMeans(return_matrix_clean)
+
+# Optimization Model Setup
+n_assets <- ncol(return_matrix_clean)
+
+# Quadratic problem inputs
+Q <- Matrix(cov_matrix, sparse = TRUE)  # Covariance matrix
+c <- -mean_returns                      # Mean returns (negated for maximization)
+
+# Constraints
+# Constraint matrix (Amat)
+Amat <- rbind(
+  rep(1, n_assets),        # Sum-to-1 constraint
+  diag(n_assets),          # Non-negativity (weights >= 0)
+  colSums(asset_mapping$AssetClass == "Equity"),  # Equity constraint (≤ 60%)
+  colSums(asset_mapping$AssetClass == "Rates"),   # Bonds constraint (≤ 25%)
+  diag(n_assets)           # Single asset constraint (≤ 40%)
+)
+
+# Bounds
+l <- c(1, rep(0, n_assets), 0, 0, rep(0, n_assets))  # Lower bounds
+u <- c(1, rep(Inf, n_assets), 0.60, 0.25, rep(0.40, n_assets))  # Upper bounds
+
+# OSQP Model
+model <- osqp::osqp(
+  P = Q,
+  q = c,
+  A = Matrix(Amat, sparse = TRUE),
+  l = l,
+  u = u
+)
+
+# Solve the optimization problem
+result <- model$solve()
+
+# Extract optimal weights
+optimal_weights <- result$x
+
+# Check results
+print(optimal_weights)
+sum(optimal_weights)  # Should be close to 1
+print(optimal_weights[optimal_weights > 0.4])  # Check for violations
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Align both datasets to start from the same date and aggregate to monthly
+
+# Step 1: Filter to dates after 2010 and aggregate to monthly
+MAA_monthly <- MAA %>%
+  filter(date >= as.Date("2010-01-01")) %>%
+  group_by(Ticker, Name, month = floor_date(date, "month")) %>%
+  summarise(Price = last(Price), .groups = "drop")
+
+msci_monthly <- msci %>%
+  filter(date >= as.Date("2010-01-01")) %>%
+  group_by(Ticker, month = floor_date(date, "month")) %>%
+  summarise(Price = last(Price), .groups = "drop")
+
+# Step 2: Combine both datasets into one long format
+combined_data <- bind_rows(MAA_monthly, msci_monthly)
+
+msci_name_mapping <- tibble(
+  Ticker = c("MSCI_ACWI", "MSCI_Jap", "MSCI_RE", "MSCI_USA"),
+  Name = c("MSCI All Country World Index", 
+           "MSCI Japan", 
+           "MSCI Real Estate", 
+           "MSCI USA")
+)
+
+combined_data <- combined_data %>%
+  left_join(msci_name_mapping, by = "Ticker") %>%
+  mutate(Name = coalesce(Name.x, Name.y)) %>%
+  select(-Name.x, -Name.y)
+
+
+
+
+
+# Step 3: Pivot to wide format with each asset in its own column
+wide_data <- combined_data %>% select(-Name) %>%
+  pivot_wider(names_from = Ticker, values_from = Price)
+
+# Step 4: Calculate monthly returns
+return_matrix <- wide_data %>%
+  arrange(month) %>%
+  mutate(across(-month, ~ (.) / lag(.) - 1)) %>%  # Calculate returns
+  filter(!is.na(month)) %>%  # Remove NA returns
+  select(-month)  # Remove month column
+
+# Step 5: Remove rows with NAs (optional, depending on data completeness)
+return_matrix_clean <- na.omit(return_matrix)
+
+# # Step 6: Recalculate the covariance matrix
+
+
+```
+
+
+```{r}
+library(osqp)
+library(Matrix)
+
+# Step 1: Define the number of assets (n_assets)
+n_assets <- ncol(return_matrix_clean)
+
+# Step 2: Covariance Matrix (Q) and Mean Returns (c)
+cov_matrix <- cov(return_matrix_clean)
+mean_returns <- colMeans(return_matrix_clean)
+
+# Q is the covariance matrix (2nd moment matrix)
+Q <- cov_matrix
+
+# c is the vector of expected returns (mean returns)
+c <- -mean_returns  # OSQP assumes maximization, so we negate the mean returns
+```
+
+
+<!-- ```{r} -->
+
+
+<!-- # Step 3: Define the constraints (Amat, l, u) -->
+<!-- # Amat is the constraint matrix (equity, bond, non-negativity, and sum of weights) -->
+<!-- Amat <- cbind(rep(1, n_assets),  # Sum of weights = 1 (equality constraint) -->
+<!--               diag(n_assets),    # Non-negativity constraints (weights >= 0) -->
+<!--               rep(0, n_assets),  # Equity constraint placeholder (for <= 60%) -->
+<!--               rep(0, n_assets),  # Bond constraint placeholder (for <= 25%) -->
+<!--               diag(n_assets))    # Single asset constraint placeholder (for <= 40%) -->
+
+<!-- # Setting up the constraint bounds (l and u) -->
+<!-- l <- c(1, rep(0, n_assets), rep(0, n_assets), 0.60, 0.25, rep(0, n_assets))  # Lower bounds -->
+<!-- u <- c(1, rep(Inf, n_assets), rep(Inf, n_assets), 0.60, 0.25, rep(0.40, n_assets))  # Upper bounds -->
+
+<!-- # Step 4: Create sparse matrices for OSQP (to speed up computations) -->
+<!-- Q_sparse <- Matrix(Q, sparse = TRUE) -->
+<!-- A_sparse <- Matrix(Amat, sparse = TRUE) -->
+
+<!-- # Step 5: Solve the optimization problem using OSQP -->
+<!-- model <- osqp::osqp( -->
+<!--   P = Q_sparse,  # Quadratic part (covariance matrix) -->
+<!--   q = c,         # Linear part (mean returns) -->
+<!--   A = A_sparse,  # Constraint matrix -->
+<!--   l = l,         # Lower bounds -->
+<!--   u = u          # Upper bounds -->
+<!-- ) -->
+
+<!-- # Step 6: Extract the optimal weights -->
+<!-- optimal_weights <- model$x -->
+
+<!-- # Step 7: Output the optimal weights -->
+<!-- optimal_weights -->
+
+<!-- ``` -->
+```{r}
+# Step 3: Define the constraints (Amat, l, u)
+# Total number of constraints: 1 (sum) + n_assets (non-negativity) + 2 (exposure limits) + n_assets (single asset limits)
+m <- 1 + n_assets + 2 + n_assets
+Amat <- matrix(0, nrow = m, ncol = n_assets)
+
+# Constraint 1: Sum of weights = 1
+Amat[1, ] <- 1
+
+# Constraints 2 to 1 + n_assets: Non-negativity (weights >= 0)
+Amat[2:(1 + n_assets), ] <- diag(n_assets)
+
+# Constraint 1 + n_assets + 1: Equity exposure <= 60%
+# Assume equities are in columns corresponding to equity assets (adjust indices accordingly)
+equity_indices <- which(colnames(return_matrix_clean) %in% c("MSCI_ACWI", "MSCI_Jap", "MSCI_RE", "MSCI_USA"))
+Amat[1 + n_assets + 1, equity_indices] <- 1
+
+# Constraint 1 + n_assets + 2: Bond exposure <= 25%
+# Assume bonds are in columns corresponding to bond assets (adjust indices accordingly)
+bond_indices <- which(colnames(return_matrix_clean) %in% c("LUACTRUU Index", "LUAGTRUU Index"))
+Amat[1 + n_assets + 2, bond_indices] <- 1
+
+# Constraints 1 + n_assets + 3 onward: Single asset exposure <= 40%
+Amat[(1 + n_assets + 3):m, ] <- diag(n_assets)
+
+# Define bounds l and u
+l <- c(1, rep(0, n_assets), rep(0, 2), rep(0, n_assets))  # Lower bounds
+u <- c(1, rep(Inf, n_assets), 0.60, 0.25, rep(0.40, n_assets))  # Upper bounds
+
+# Create sparse matrices for OSQP
+Q_sparse <- Matrix(Q, sparse = TRUE)
+A_sparse <- Matrix(Amat, sparse = TRUE)
+
+# Solve the optimization problem using OSQP
+model <- osqp::osqp(
+  P = Q_sparse,
+  q = c,
+  A = A_sparse,
+  l = l,
+  u = u
+)
+
+# Extract the optimal weights
+optimal_weights <- model$x
+optimal_weights
+
+```
+
+
+
+```{r}
+Amat <- rbind(
+  rep(1, n_assets),  # Sum-to-1 constraint
+  diag(n_assets),    # Non-negativity constraints
+  equity_row,        # Row for equity exposure (fill appropriately)
+  bond_row,          # Row for bond exposure (fill appropriately)
+  diag(n_assets)     # Single asset constraints
+)
+
+# Set bounds for each row
+l <- c(
+  1,                 # Sum-to-1 lower bound
+  rep(0, n_assets),  # Non-negativity lower bound
+  0,                 # Equity lower bound
+  0,                 # Bond lower bound
+  rep(0, n_assets)   # Single asset lower bound
+)
+
+u <- c(
+  1,                 # Sum-to-1 upper bound
+  rep(Inf, n_assets),# Non-negativity upper bound
+  0.60,              # Equity upper bound
+  0.25,              # Bond upper bound
+  rep(0.40, n_assets)# Single asset upper bound
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# cov_matrix <- cov(return_matrix_clean)
+# 
+# # Proceed with optimization using `quadprog`
+# 
+# 
+# equity_indices <- which(colnames(return_matrix_clean) %in% c("MSCI_ACWI", "MSCI_Jap", "MSCI_RE", "MSCI_USA"))
+# bond_indices <- which(colnames(return_matrix_clean) %in% c("LP05TREH Index", "LEATTREU Index", "LGAGTRUH Index"))
+# 
+# n_assets <- ncol(return_matrix_clean)
+# 
+# 
+# 
+# library(Matrix)
+# # 2. Covariance Matrix and Mean Returns
+# cov_matrix <- cov(return_matrix_clean)
+# cov_matrix <- as.matrix(nearPD(cov_matrix)$mat)
+# mean_returns <- colMeans(return_matrix_clean)
+# 
+# dvec <- mean_returns  # Mean returns as the objective
+```{r}
+library(osqp)
+library(Matrix)
+
+# Step 1: Define the necessary variables
+n_assets <- ncol(return_matrix_clean)  # Number of assets
+cov_matrix <- cov(return_matrix_clean)  # Covariance matrix
+dvec <- colMeans(return_matrix_clean)  # Mean returns vector
+
+# Step 2: Define the quadratic objective coefficients (Q) and linear part (c)
+Q <- cov_matrix   # The quadratic matrix (covariance matrix)
+c <- -dvec        # The linear coefficients (negative of mean returns)
+
+# Step 3: Define constraints
+# 1. Sum of weights = 1 (equality constraint)
+Aeq <- matrix(1, nrow = 1, ncol = n_assets)  # Row of 1's (sum of weights = 1)
+beq <- 1       # Right-hand side for equality constraint (sum = 1)
+
+# 2. Non-negativity (weights >= 0)
+lb <- rep(0, n_assets)  # Lower bound (weights >= 0)
+
+# 3. Equity constraint (≤ 60%)
+equity_indices <- which(colnames(return_matrix_clean) %in% c("MSCI_ACWI", "MSCI_Jap", "MSCI_RE", "MSCI_USA"))
+equity_constraint <- rep(0, n_assets)
+equity_constraint[equity_indices] <- 1
+Aeq <- rbind(Aeq, equity_constraint)  # Add equity constraint row
+beq <- c(beq, 0.60)  # Equity constraint RHS (≤ 60%)
+
+# 4. Bond constraint (≤ 25%)
+bond_indices <- which(colnames(return_matrix_clean) %in% c("LP05TREH Index", "LEATTREU Index", "LGAGTRUH Index"))
+bond_constraint <- rep(0, n_assets)
+bond_constraint[bond_indices] <- 1
+Aeq <- rbind(Aeq, bond_constraint)  # Add bond constraint row
+beq <- c(beq, 0.25)  # Bond constraint RHS (≤ 25%)
+
+# 5. Single asset constraint (≤ 40%)
+Aeq <- rbind(Aeq, diag(1, n_assets))  # Add diagonal matrix for individual asset constraints
+beq <- c(beq, rep(0.40, n_assets))  # Individual asset constraint RHS (≤ 40%)
+
+# Step 4: Convert matrices to sparse format for OSQP
+Q_sparse <- as(Q, "CsparseMatrix")  # Convert Q to sparse format
+A_sparse <- as(Aeq, "CsparseMatrix")  # Convert A to sparse format
+
+# Step 5: Prepare the OSQP model
+# Note: OSQP requires the following arguments for the model:
+# Q (quadratic objective matrix), c (linear part of the objective)
+# A (constraint matrix), l (lower bounds for constraints), u (upper bounds for constraints)
+
+l <- c(beq, rep(0, n_assets))  # Lower bounds for constraints
+u <- c(beq, rep(0.60, n_assets), rep(0.25, n_assets), rep(0.40, n_assets))  # Upper bounds for constraints
+
+# Ensure the number of constraints is 16
+l <- rep(-Inf, n_constraints)  # Example: set lower bounds to -Inf
+u <- rep(Inf, n_constraints)   # Example: set upper bounds to Inf
+
+# Now define the specific bounds for your problem, e.g., equity, bond, etc.
+l[1] <- 1  # For example, if the first constraint is sum of weights = 1
+u[1] <- 1  # Set the same for the equality constraint
+
+l[14:16] <- 0.60  # Example: Set upper bounds for equity constraints (adjust as needed)
+u[14:16] <- 0.60
+
+l[17:18] <- 0.25  # Example: Set upper bounds for bond constraints (adjust as needed)
+u[17:18] <- 0.25
+
+# If you have additional constraints (e.g., single asset limits), set them accordingly:
+l[19:29] <- 0  # Example: non-negative constraints for each asset
+u[19:29] <- 0.40  # Example: single asset weight <= 40%
+
+# Now you can pass l and u to the OSQP solver
+model <- osqp::osqp(
+  P = Q_sparse,  # Quadratic part
+  q = c,         # Linear part
+  A = A_sparse,  # Constraint matrix
+  l = l,         # Lower bounds
+  u = u          # Upper bounds
+)
+
+result <- osqp::solve(model)
+
+# Output the optimal weights
+optimal_weights <- result$x
+print(optimal_weights)
+
+
+
+# Step 6: Solve the optimization problem using OSQP
+model <- osqp::osqp(
+  P = Q_sparse,  # Quadratic part
+  q = c,         # Linear part
+  A = A_sparse,  # Constraint matrix
+  l = l,         # Lower bounds
+  u = u          # Upper bounds
+)
+
+result <- osqp::solve(model)
+
+# Output the optimal weights
+optimal_weights <- result$x
+optimal_weights
+
+```
+
+
+
+
+
+
+```{r}
+library(gurobi)
+
+# Step 1: Define the necessary variables
+n_assets <- ncol(return_matrix_clean)  # Number of assets
+cov_matrix <- cov(return_matrix_clean)  # Covariance matrix
+dvec <- colMeans(return_matrix_clean)  # Mean returns vector
+
+# Step 2: Define the linear objective coefficients (dvec) and quadratic objective matrix (cov_matrix)
+# The objective is 1/2 * x' * cov_matrix * x - dvec' * x (quadratic programming form)
+Q <- cov_matrix  # The quadratic matrix
+obj <- -dvec      # Linear part of the objective
+
+# Step 3: Define constraints
+
+# 1. Sum of weights = 1 (equality constraint)
+Aeq <- matrix(1, nrow = 1, ncol = n_assets)  # Row of 1's (sum of weights = 1)
+beq <- 1       # Right-hand side for equality constraint (sum = 1)
+
+# 2. Non-negativity (weights >= 0)
+lb <- rep(0, n_assets)  # Lower bound (weights >= 0)
+
+# 3. Equity constraint (≤ 60%)
+equity_indices <- which(colnames(return_matrix_clean) %in% c("MSCI_ACWI", "MSCI_Jap", "MSCI_RE", "MSCI_USA"))
+equity_constraint <- rep(0, n_assets)
+equity_constraint[equity_indices] <- 1
+Aeq <- rbind(Aeq, equity_constraint)  # Add equity constraint row
+beq <- c(beq, 0.60)  # Equity constraint RHS (≤ 60%)
+
+# 4. Bond constraint (≤ 25%)
+bond_indices <- which(colnames(return_matrix_clean) %in% c("LP05TREH Index", "LEATTREU Index", "LGAGTRUH Index"))
+bond_constraint <- rep(0, n_assets)
+bond_constraint[bond_indices] <- 1
+Aeq <- rbind(Aeq, bond_constraint)  # Add bond constraint row
+beq <- c(beq, 0.25)  # Bond constraint RHS (≤ 25%)
+
+# 5. Single asset constraint (≤ 40%)
+Aeq <- rbind(Aeq, diag(1, n_assets))  # Add diagonal matrix for individual asset constraints
+beq <- c(beq, rep(0.40, n_assets))  # Individual asset constraint RHS (≤ 40%)
+
+# Step 4: Prepare the gurobi model
+model <- list(
+  obj = obj,             # Linear objective coefficients
+  Q = Q,                 # Quadratic matrix
+  A = Aeq,               # Equality constraints matrix
+  rhs = beq,             # Right-hand side of the constraints
+  sense = rep("=", length(beq)),  # All equality constraints
+  lb = lb,               # Lower bounds (non-negativity constraints)
+  ub = rep(Inf, n_assets)  # Upper bounds (no upper limit for weights)
+)
+
+# Step 5: Solve the optimization problem
+result <- gurobi(model)
+
+# Output the optimal weights
+optimal_weights <- result$x
+optimal_weights
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+Amat <- cbind(rep(1, n_assets))  # Sum of weights = 1
+bvec <- c(1)  # Equality constraint: sum of weights equals 1
+
+# Non-negativity (already in place)
+Amat <- cbind(Amat, diag(n_assets))
+bvec <- c(bvec, rep(0, n_assets))
+
+# Equity sum constraint (≤ 60%)
+equity_constraint <- rep(0, n_assets)
+equity_constraint[equity_indices] <- 1
+Amat <- cbind(Amat, equity_constraint)
+bvec <- c(bvec, 0.60)
+
+# Bond sum constraint (≤ 25%)
+bond_constraint <- rep(0, n_assets)
+bond_constraint[bond_indices] <- 1
+Amat <- cbind(Amat, bond_constraint)
+bvec <- c(bvec, 0.25)
+
+# Single asset constraint (≤ 40%)
+Amat <- cbind(Amat, diag(n_assets))
+bvec <- c(bvec, rep(0.40, n_assets))
+
+# Solve the optimization problem
+optimal_weights <- solve.QP(Dmat = cov_matrix, dvec = dvec, Amat = Amat, bvec = bvec, meq = 1)
+
+
+
+
+
+
+
+# Output optimal weights
+optimal_weights$solution
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Load required libraries
+library(dplyr)
+library(tidyr)
+library(quadprog)
+
+# 1. Data Preparation
+# Merge MAA and msci data
+data_combined <- bind_rows(MAA %>% select(date, Ticker, Price),
+                           msci %>% select(date, Ticker, Price))
+
+# Calculate monthly returns
+data_returns <- data_combined %>%
+  group_by(Ticker) %>%
+  arrange(date) %>%
+  mutate(Return = (Price - lag(Price)) / lag(Price)) %>%
+  filter(date >= as.Date("2010-01-01")) %>%
+  filter(!is.na(Return)) %>%
+  ungroup()
+
+# Ensure only assets with 36+ months of data are used
+valid_assets <- data_returns %>%
+  group_by(Ticker) %>%
+  filter(n() >= 36) %>%
+  ungroup() %>%
+  select(Ticker) %>%
+  distinct()
+
+data_filtered <- data_returns %>%
+  semi_join(valid_assets, by = "Ticker")
+
+# Reshape to wide format for covariance matrix
+return_matrix <- data_filtered %>%
+  pivot_wider(names_from = Ticker, values_from = Return) %>%
+  select(-date) %>%
+  na.omit()
+
+# 2. Covariance Matrix and Mean Returns
+cov_matrix <- cov(return_matrix)
+mean_returns <- colMeans(return_matrix)
+
+# 3. Optimization Constraints
+n_assets <- ncol(return_matrix)
+dvec <- mean_returns  # Mean returns as the objective
+
+# Equality constraint: sum of weights = 1
+Amat <- cbind(rep(1, n_assets), diag(n_assets))
+bvec <- c(1, rep(0, n_assets))  # Sum to 1, non-negativity
+
+# Additional Constraints
+Amat <- cbind(Amat, rep(0, n_assets))  # Bonds/credit ≤ 25%
+bvec <- c(bvec, 0.25)
+
+Amat <- cbind(Amat, rep(0, n_assets))  # Equities ≤ 60%
+bvec <- c(bvec, 0.60)
+
+Amat <- cbind(Amat, diag(n_assets))  # Single asset ≤ 40%
+bvec <- c(bvec, rep(0.4, n_assets))
+
+# Solve the optimization problem
+optimal_weights <- solve.QP(Dmat = cov_matrix,
+                            dvec = dvec,
+                            Amat = Amat,
+                            bvec = bvec,
+                            meq = 1)
+
+# Output optimal weights
+optimal_weights$solution
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ```{r}

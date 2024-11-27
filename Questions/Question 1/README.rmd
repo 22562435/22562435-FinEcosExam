@@ -33,83 +33,243 @@ AI_Fund <- read_rds("data/AI_Max_Fund.rds") %>% arrange(date)
 ```
 
 
+
+
 ```{r}
-
-# Calculate fee-adjusted returns for the aggregated median returns
-
-median_manager_fund <-filter_active_managers(ASISA, "2005-06-01", "2023-08-31") %>% identify_median_manager()
-
-
-# Step 3: Extract Data for the Median Manager
-ASISA_median <- ASISA %>%
-  filter(Fund == median_manager_fund)
+get_median_manager_data <- function(data, start_date, end_date) {
+    median_manager <- filter_active_managers(data, start_date, end_date) %>%
+        identify_median_manager()
+    
+    data %>%
+        filter(Fund == median_manager)
+}
 
 
 
-median_manager_fees <- calculate_fee_adjusted_returns(
-  data = ASISA_median,
-  returns_column = "Returns",  # Use the Median_Return column
-  fee_levels = c(50, 100, 200)      # Define fee levels in bps
-)
-
-# Add fee-adjusted returns to combined_rolling
-median_manager_fees <- median_manager_fees %>%
-  select(date, Type,Rets) %>%
-  mutate(Type = paste0("Median Manager ", Type)) 
+get_fee_adjusted_returns <- function(data, returns_column, fee_levels) {
+    calculate_fee_adjusted_returns(data, returns_column, fee_levels) %>%
+        select(date, Type, Rets) %>%
+        mutate(Type = paste0("Median Manager ", Type))
+}
 
 
-```
+calculate_rolling_returns_by_type <- function(data, rolling_windows) {
+    calculate_all_rolling_returns_for_fees(data, rolling_windows)
+}
 
 
-```{r calculating-returns,include=FALSE}
-# AI Fund Rolling Returns
-AI_rolling <- calculate_all_rolling_returns(AI_Fund$AI_Fund, AI_Fund$date, c(12,24,36), "AI_Fund")
-
-# Benchmark Rolling Returns
-BM_rolling <- calculate_all_rolling_returns(BM$Returns, BM$date, c(12,24,36), "Benchmark")
-
+combine_rolling_returns <- function(ai_data, bm_data, fee_data, rolling_windows) {
+    ai_rolling <- calculate_all_rolling_returns(ai_data$AI_Fund, ai_data$date, rolling_windows, "AI_Fund")
+    bm_rolling <- calculate_all_rolling_returns(bm_data$Returns, bm_data$date, rolling_windows, "Benchmark")
+    fee_rolling <- calculate_rolling_returns_by_type(fee_data, rolling_windows)
+    
+    bind_rows(ai_rolling, bm_rolling, fee_rolling)
+}
 
 
 ```
 
 
 ```{r}
-ASISA_fees_rolling <- calculate_all_rolling_returns_for_fees(
-    data = median_manager_fees,
-    rolling_windows = c(12, 24, 36)  # Rolling periods in months
-)
-
-
-
-
-
-
-
-
-combined_rolling <- bind_rows(AI_rolling, BM_rolling, ASISA_fees_rolling)
+plot_rolling_returns <- function(data) {
+    ggplot(data %>% filter(!is.na(rolling_return)), aes(x = date, y = rolling_return, color = Type)) +
+        geom_line(linewidth = 1, alpha = 0.5) +
+        facet_wrap(~ Period, ncol = 1, scales = "free_y") +
+        labs(
+            title = "Rolling Returns Comparison",
+            x = "Date",
+            y = "Rolling Returns",
+            color = "Type"
+        ) +
+        fmxdat::theme_fmx() +
+        theme(
+            plot.title = element_text(hjust = 0.5),
+            legend.position = "bottom"
+        )
+}
 
 ```
-
 
 
 ```{r}
-ggplot(combined_rolling %>% filter(!is.na(rolling_return)), aes(x = date, y = rolling_return, color = Type)) +
-  geom_line(linewidth = 1, alpha=0.5) +
-  facet_wrap(~ Period, ncol = 1,scales="free_y") +
-  labs(
-    title = "Rolling Returns Comparison",
-    x = "Date",
-    y = "Rolling Returns",
-    color = "Type",
-    linetype = "Period"
-  ) +
- fmxdat::theme_fmx() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    legend.position = "bottom"
-  )
+plot_density <- function(data) {
+    ggplot(data %>% filter(!is.na(rolling_return)), aes(x = rolling_return, fill = Type)) +
+        geom_density(alpha = 0.6) +
+        facet_wrap(~ Period, scales = "free") +
+        labs(
+            title = "Density of Rolling Returns by Period",
+            x = "Rolling Return",
+            y = "Density",
+            fill = "Type"
+        ) +
+         theme_bw() +
+        theme(
+            plot.title = element_text(hjust = 0.5),
+            legend.position = "bottom"
+        )
+}
 
 ```
+
+```{r}
+plot_returns_by_volatility <- function(data) {
+    ggplot(data %>% filter(!is.na(Volatility_Regime) & Period == "12M" & !is.na(rolling_return)), 
+           aes(x = rolling_return, fill = Type)) +
+        geom_density(alpha = 0.5) +
+        facet_wrap(~ Volatility_Regime + Period, scales = "free_y") +
+        labs(
+            title = "Rolling Returns by Volatility Regime",
+            x = "Rolling Return",
+            y = "Density",
+            fill = "Type"
+        ) +
+        theme_bw() +
+        theme(
+            plot.title = element_text(hjust = 0.5),
+            legend.position = "bottom"
+        )
+}
+
+```
+
+```{r}
+# Step 1: Median Manager Data
+ASISA_median <- get_median_manager_data(ASISA, "2005-06-01", "2023-08-31")
+
+# Step 2: Fee-Adjusted Returns
+median_manager_fees <- get_fee_adjusted_returns(ASISA_median, "Returns", c(50, 100, 200))
+
+# Step 3: Combined Rolling Returns
+combined_rolling <- combine_rolling_returns(AI_Fund, BM, median_manager_fees, c(12, 24, 36))
+
+# Step 4: Plots
+plot_rolling_returns(combined_rolling)
+plot_density(combined_rolling)
+
+# Step 5: Volatility Analysis
+BM_volatility <- calculate_rolling_volatility(BM$Returns, BM$date, window_size = 20) %>%
+    mutate(Volatility_Regime = stratify_volatility_regimes(Rolling_Volatility))
+
+combined_with_volatility <- combined_rolling %>%
+    left_join(BM_volatility %>% select(date, Volatility_Regime), by = "date") %>%
+    mutate(Volatility_Regime = factor(Volatility_Regime, 
+                                      levels = c("Low Volatility", "Normal", "High Volatility")))
+
+
+plot_returns_by_volatility(combined_with_volatility)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- #WORKS-NO TOUCH -->
+<!-- ```{r} -->
+
+<!-- # Calculate fee-adjusted returns for the aggregated median returns -->
+
+<!-- median_manager_fund <-filter_active_managers(ASISA, "2005-06-01", "2023-08-31") %>% identify_median_manager() -->
+
+
+<!-- # Step 3: Extract Data for the Median Manager -->
+<!-- ASISA_median <- ASISA %>% -->
+<!--   filter(Fund == median_manager_fund) -->
+
+
+
+<!-- median_manager_fees <- calculate_fee_adjusted_returns( -->
+<!--   data = ASISA_median, -->
+<!--   returns_column = "Returns",  # Use the Median_Return column -->
+<!--   fee_levels = c(50, 100, 200)      # Define fee levels in bps -->
+<!-- ) -->
+
+<!-- # Add fee-adjusted returns to combined_rolling -->
+<!-- median_manager_fees <- median_manager_fees %>% -->
+<!--   select(date, Type,Rets) %>% -->
+<!--   mutate(Type = paste0("Median Manager ", Type))  -->
+
+
+<!-- ``` -->
+
+
+<!-- ```{r calculating-returns,include=FALSE} -->
+<!-- # AI Fund Rolling Returns -->
+<!-- AI_rolling <- calculate_all_rolling_returns(AI_Fund$AI_Fund, AI_Fund$date, c(12,24,36), "AI_Fund") -->
+
+<!-- # Benchmark Rolling Returns -->
+<!-- BM_rolling <- calculate_all_rolling_returns(BM$Returns, BM$date, c(12,24,36), "Benchmark") -->
+
+
+
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- ASISA_fees_rolling <- calculate_all_rolling_returns_for_fees( -->
+<!--     data = median_manager_fees, -->
+<!--     rolling_windows = c(12, 24, 36)  # Rolling periods in months -->
+<!-- ) -->
+
+
+
+
+
+
+
+
+<!-- combined_rolling <- bind_rows(AI_rolling, BM_rolling, ASISA_fees_rolling) -->
+
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- ggplot(combined_rolling %>% filter(!is.na(rolling_return)), aes(x = date, y = rolling_return, color = Type)) + -->
+<!--   geom_line(linewidth = 1, alpha=0.5) + -->
+<!--   facet_wrap(~ Period, ncol = 1,scales="free_y") + -->
+<!--   labs( -->
+<!--     title = "Rolling Returns Comparison", -->
+<!--     x = "Date", -->
+<!--     y = "Rolling Returns", -->
+<!--     color = "Type", -->
+<!--     linetype = "Period" -->
+<!--   ) + -->
+<!--  fmxdat::theme_fmx() + -->
+<!--   theme( -->
+<!--     plot.title = element_text(hjust = 0.5), -->
+<!--     legend.position = "bottom" -->
+<!--   ) -->
+
+<!-- ``` -->
 
 
 
