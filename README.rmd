@@ -26,16 +26,148 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width =
 
 # Question 1 
 
-Question 1
+
+```{r setup-1, include=FALSE}
+
+rm(list = ls()) # Clean your environment:
+
+
+
+list.files('Questions/Question 1/code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+
+
+
+#Code and Data provided 
+ASISA <- read_rds("data/ASISA_Rets.rds") %>% arrange(date)
+BM <- read_rds("data/Capped_SWIX.rds") %>% arrange(date)
+AI_Fund <- read_rds("data/AI_Max_Fund.rds") %>% arrange(date)
+```
+
+This code chunk performs a series of data wrangling steps for analyzing financial returns and volatility. First, it extracts data for the median manager between June 2005 and August 2023 using the get_median_manager_data function. This function filters active managers from the ASISA data and identifies the manager whose return is closest to the global median return. Next, it adjusts the returns for the median manager by applying different fee levels (50, 100, and 200 basis points) using get_fee_adjusted_returns, which internally calls calculate_fee_adjusted_returns to adjust the returns for each fee level. The rolling returns for both the AI Fund and Benchmark are then computed using the combine_rolling_returns function, which combines rolling returns for different assets using the specified window sizes (12, 24, 36 months). Lastly, the rolling volatility for the benchmark returns is calculated using the calculate_rolling_volatility function and classified into different volatility regimes with the stratify_volatility_regimes function. This results in a series of data transformations that prepare the data for further analysis or plotting.
+
+```{r data-wrangling-1}
+# Median Manager Data
+ASISA_median <- get_median_manager_data(ASISA, "2005-06-01", "2023-08-31")
+
+# Fee-Adjusted Returns
+median_manager_fees <- get_fee_adjusted_returns(ASISA_median, "Returns", c(50, 100, 200))
+
+# Combined Rolling Returns
+combined_rolling <- combine_rolling_returns(AI_Fund, BM, median_manager_fees, c(12, 24, 36))
+
+
+```
+
+
+The code chunk plot_rolling_returns is used to generate a line plot comparing the rolling returns for different types of assets or funds, as stored in the combined_rolling dataset. The plot_rolling_returns function filters out any NA values from the rolling returns and then creates a plot using ggplot2.
+
+```{r plotting-returns}
+
+# Plots
+plot_rolling_returns(combined_rolling)
+
+```
+
+
+The plot_density function creates density plots to visualize the distribution of rolling returns for different types of assets or funds. It filters out any NA values in the rolling_return column, and then uses ggplot2 to plot the density of rolling_return on the x-axis, with different fills for each Type (e.g., AI Fund, Benchmark). The plot is faceted by the Period (such as 12-month, 24-month, etc.) to compare the distributions across different time windows. 
+
+
+```{r plotting-density-by_rolling_period}
+plot_density(combined_rolling)
+
+```
+
+The next chunks calculates the rolling volatility of benchmark returns using a 20-day window with the calculate_rolling_volatility function, which computes the standard deviation of returns over this period. The volatility values are classified into different regimes (e.g., "Low Volatility," "Normal," and "High Volatility") using the stratify_volatility_regimes function. The benchmark volatility data is then merged with the rolling returns data (combined_rolling) based on the date column. The Volatility_Regime column is converted to an ordered factor for easy plotting. Finally, the plot_returns_by_volatility function generates a density plot of rolling returns by volatility regime, focusing on the "12M" period and different asset types, allowing a comparison of returns across volatility regimes.
+
+
+```{r plotting-returns-by-vol}
+# Calculate rolling volatility for the benchmark returns using a 20-day window
+BM_volatility <- calculate_rolling_volatility(BM$Returns, BM$date, window_size = 20) %>%
+    # Classify the rolling volatility into different regimes 
+    mutate(Volatility_Regime = stratify_volatility_regimes(Rolling_Volatility))
+
+
+# Combine the rolling returns data with the benchmark's volatility regimes
+combined_with_volatility <- combined_rolling %>%
+    left_join(BM_volatility %>% select(date, Volatility_Regime), by = "date") %>%
+    # Convert the Volatility_Regime column into a factor with ordered levels
+    mutate(Volatility_Regime = factor(Volatility_Regime, 
+                                      levels = c("Low Volatility", "Normal", "High Volatility")))
+plot_returns_by_volatility(combined_with_volatility)
+```
+
 
 
 # Question 2
 
+```{r setup 2, include=FALSE}
+
+rm(list = ls()) # Clean your environment:
+
+list.files('Questions/Question 2/code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+
+Indexes <- read_rds("data/Cncy_Hedge_Assets.rds") %>%
+  mutate(date = floor_date(date, "month"))
+Zar <- read_rds("data/Monthly_zar.rds")%>%
+  mutate(date = floor_date(date, "month"))
+```
+
+The following chunk transforms financial data to calculate portfolio returns, including currency adjustments. First, it reshapes the Indexes data into a tidy format using pivot_longer, then appends data from Zar and computes monthly currency returns using the calculate_currency_returns function, which calculates the logarithmic returns for the USD/ZAR exchange rate. The currency returns are converted into a tidy format by convert_currency_returns_to_tidy. Next, portfolio returns are calculated by calculate_portfolio_returns, where the portfolio is composed of both hedged (adjusted for currency returns) and unhedged returns based on predefined weights for different asset classes (MSCI ACWI, Bbg Agg, J433, ALBI). The final dataset contains portfolio returns and the associated tickers, with the relevant adjustments for currency hedging, and is organized by date and ticker.
+
+```{r data-wrangling-2}
+
+tidy_data <- Indexes %>%
+    pivot_longer(cols = -date, names_to = "Tickers", values_to = "value") %>%
+    bind_rows(Zar) %>%
+    arrange(date, Tickers) %>%
+    # Calculate monthly currency returns and convert to tidy format in-line
+    bind_rows(
+        convert_currency_returns_to_tidy(
+            calculate_currency_returns(., "$ZAR.USD")
+        )
+    ) %>%
+    # Define weights for portfolio
+    bind_rows(
+        calculate_portfolio_returns(
+            .,
+            calculate_currency_returns(., "$ZAR.USD"),
+            tibble(
+                Tickers = c("MSCI_ACWI", "Bbg_Agg", "J433", "ALBI"),
+                weight = c(0.18, 0.12, 0.42, 0.28)  # 70% local, 30% global split
+            )
+        )
+    ) %>%
+    select(date, Tickers, value)  # Keep original tidy_data columns
+```
+
+The next chunk generates scatter plot a to visualize the relationships between portfolio returns and currency returns (USD/ZAR). The main function, plot_portfolio_relationships, creates two scatter plots—one for unhedged portfolio returns and one for hedged returns. For both, it first filters the data to select the relevant variables (unhedged_return or hedged_return and currency_returns), pivots the data into a wider format, and removes any missing values. Then, it uses the helper function create_scatter_plot_with_marginals to generate scatter plots with a trend line (fitted using linear regression) and marginal density plots for both axes.
+
+
+```{r plot-scatter}
+
+plot_portfolio_relationships(tidy_data, "hedged_return", "currency_returns")
+
+```
+
+
+The following chunk uses calculate_metrics to compute key financial metrics for selected portfolio variables (hedged and unhedged returns) against a reference variable (USD/ZAR exchange rate). It calculates the correlation, annual return, and annualized standard deviation for each variable. The function filters the data starting from a specified date, merges it with reference data, and computes the metrics. 
+
+```{r table-construction}
+calculate_metrics(
+  data = tidy_data,
+  start_date = "2004-12-01",
+  row_variables = c("hedged_return", "unhedged_return"),
+  reference_variable = "$ZAR.USD"
+)
+
+
+
+```
+
+
 
 
 # Question 3
-
-
 
 
 ```{r q3-setup, include=FALSE}

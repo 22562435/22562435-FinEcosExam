@@ -33,7 +33,7 @@ plot_portfolio_relationships <- function(tidy_data, hedged_var, currency_var) {
     scatter_data_unhedged <- tidy_data %>%
         filter(Tickers %in% c("unhedged_return", currency_var)) %>%
         pivot_wider(names_from = Tickers, values_from = value) %>%
-        filter(!is.na(unhedged_return), !is.na(!!sym(currency_var)))  # Use !!sym for dynamic variable names
+        filter(!is.na(unhedged_return), !is.na(!!sym(currency_var)))  # Using !!sym for dynamic variable names
 
     # Create the scatter plot for unhedged returns
     create_scatter_plot_with_marginals(scatter_data_unhedged, currency_var, "unhedged_return",
@@ -43,7 +43,7 @@ plot_portfolio_relationships <- function(tidy_data, hedged_var, currency_var) {
     scatter_data_hedged <- tidy_data %>%
         filter(Tickers %in% c(hedged_var, currency_var)) %>%
         pivot_wider(names_from = Tickers, values_from = value) %>%
-        filter(!is.na(!!sym(hedged_var)), !is.na(!!sym(currency_var)))  # Use !!sym for dynamic variable names
+        filter(!is.na(!!sym(hedged_var)), !is.na(!!sym(currency_var)))  # Useing !!sym for dynamic variable names
 
     # Create the scatter plot for hedged returns
     create_scatter_plot_with_marginals(scatter_data_hedged, currency_var, hedged_var,

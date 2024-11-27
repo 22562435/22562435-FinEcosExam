@@ -1,33 +1,3 @@
-# calculate_fee_adjusted_returns <- function(data, returns_column = "Returns", fee_levels = c(50, 100, 200)) {
-#     # Convert annual fees to monthly compounded rates
-#     feeconverter <- function(x, Ann_Level) (1 + x)^(1 / Ann_Level) - 1
-#
-#     # Rename the returns column dynamically
-#     data <- data %>%
-#         rename(returns = !!returns_column)  # Dynamically use the input column
-#
-#     # Adjust returns for each fee level
-#     for (fee in fee_levels) {
-#         fee_rate <- feeconverter(fee * 1e-4, Ann_Level = 12)
-#         data[[paste0("Return - ", fee, " bps")]] <- data$returns - fee_rate
-#     }
-#
-#     # Calculate Gross cumulative returns before reshaping
-#     data <- data %>%
-#         mutate(Gross = cumprod(1 + returns))  # Calculate gross cumulative returns
-#
-#     # Reshape to long format and compute cumulative returns for fee-adjusted returns
-#     fee_adjusted_long <- data %>%
-#         pivot_longer(cols = starts_with("Return"), names_to = "Type", values_to = "Rets") %>%
-#         group_by(Type) %>%
-#         mutate(CP = cumprod(1 + Rets)) %>%  # Cumulative returns for fee-adjusted
-#         ungroup()
-#
-#     return(fee_adjusted_long)
-# }
-
-
-
 
 calculate_fee_adjusted_returns <- function(data, returns_column = "Returns", fee_levels = c(50, 100, 200)) {
     # Convert annual fees to monthly compounded rates
