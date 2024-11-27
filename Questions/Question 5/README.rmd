@@ -10,10 +10,10 @@ I have been asked to evaluate the following two statements
 
 1. The South African rand (ZAR) has over the past few years been one of the most volatile currencies
 
-2. The ZAR has generally performed well during periods where G10 currency carry trades have been favourable and currency valuations relatively cheap. Globally, it has been one of the currencies that most benefit during periods where the Dollar is comparatively strong, indicating a risk-on sentiment.
+2. The ZAR has generally performed well during periods where G10 currency carry trades have been favourable and currency valuations relatively cheap. Globally, it has been one of the currencies that most benefit during periods where the Dollar is comparatively strong, indicating a risk-on sentiment.
 
 
-```{r}
+```{r,include=FALSE}
 
 rm(list = ls()) # Clean your environment:
 gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
@@ -31,7 +31,7 @@ bbdxy <- read_rds("data/bbdxy.rds")
 IV <- read_rds("data/IV.rds")
 ```
 
-```{r plot-sigma-comparisons}
+```{r plot-sigma-comparisons,echo=FALSE}
 # Prepare data for -sigZAR, including log returns in the result
 zar_data <- cncy %>%
   filter(Name == "SouthAfrica_Cncy") %>%
@@ -62,7 +62,7 @@ Forecasting Power: If you've used the GARCH model to generate forecasts, you can
 
 
 
-```{r plot-cond-var-for-multiple-countries}
+```{r plot-cond-var-for-multiple-countries,echo=FALSE}
 # Define currencies
 selected_currencies <- c(
   "SouthAfrica_Cncy", "Brazil_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
@@ -77,9 +77,7 @@ cncy %>% fit_garch_for_multiple_currencies( selected_currencies) %>% plot_volati
 
 
 
-
-
-```{r plot-dynamic-correlations}
+```{r plot-dynamic-correlations,echo=FALSE}
 
 # Calculate log returns for ZAR and Dollar
 zar_data <- calculate_log_returns(cncy %>% filter(Name == "SouthAfrica_Cncy"))

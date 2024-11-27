@@ -5,170 +5,16 @@ I have been asked to evaluate the following two statements
 1.  The South African rand (ZAR) has over the past few years been one of
     the most volatile currencies
 
-2. The ZAR has generally performed well during periods where G10
-currency carry trades have been favourable and currency valuations
-relatively cheap. Globally, it has been one of the currencies that most
-benefit during periods where the Dollar is comparatively strong,
-indicating a risk-on sentiment.
+2.  The ZAR has generally performed well during periods where G10
+    currency carry trades have been favourable and currency valuations
+    relatively cheap. Globally, it has been one of the currencies that
+    most benefit during periods where the Dollar is comparatively
+    strong, indicating a risk-on sentiment.
 
-``` r
-rm(list = ls()) # Clean your environment:
-gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
-```
-
-    ##          used (Mb) gc trigger (Mb) max used (Mb)
-    ## Ncells 483491 25.9    1038174 55.5   686457 36.7
-    ## Vcells 899259  6.9    8388608 64.0  1876680 14.4
-
-``` r
-source("code/install_and_load.R")
-install_and_load(c("tidyverse","zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","rugarch","rmgarch","tidyr","scales"))
-```
-
-    ## Loading required package: tidyverse
-
-    ## ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
-    ## ✔ dplyr     1.1.4     ✔ readr     2.1.5
-    ## ✔ forcats   1.0.0     ✔ stringr   1.5.1
-    ## ✔ ggplot2   3.5.1     ✔ tibble    3.2.1
-    ## ✔ lubridate 1.9.3     ✔ tidyr     1.3.1
-    ## ✔ purrr     1.0.2     
-    ## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
-    ## ✖ dplyr::filter() masks stats::filter()
-    ## ✖ dplyr::lag()    masks stats::lag()
-    ## ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
-    ## Loading required package: zoo
-    ## 
-    ## 
-    ## Attaching package: 'zoo'
-    ## 
-    ## 
-    ## The following objects are masked from 'package:base':
-    ## 
-    ##     as.Date, as.Date.numeric
-    ## 
-    ## 
-    ## Loading required package: xts
-    ## 
-    ## 
-    ## ######################### Warning from 'xts' package ##########################
-    ## #                                                                             #
-    ## # The dplyr lag() function breaks how base R's lag() function is supposed to  #
-    ## # work, which breaks lag(my_xts). Calls to lag(my_xts) that you type or       #
-    ## # source() into this session won't work correctly.                            #
-    ## #                                                                             #
-    ## # Use stats::lag() to make sure you're not using dplyr::lag(), or you can add #
-    ## # conflictRules('dplyr', exclude = 'lag') to your .Rprofile to stop           #
-    ## # dplyr from breaking base R's lag() function.                                #
-    ## #                                                                             #
-    ## # Code in packages is not affected. It's protected by R's namespace mechanism #
-    ## # Set `options(xts.warn_dplyr_breaks_lag = FALSE)` to suppress this warning.  #
-    ## #                                                                             #
-    ## ###############################################################################
-    ## 
-    ## 
-    ## Attaching package: 'xts'
-    ## 
-    ## 
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     first, last
-    ## 
-    ## 
-    ## Loading required package: treemap
-
-    ## Warning: package 'treemap' was built under R version 4.4.2
-
-    ## Loading required package: PerformanceAnalytics
-    ## 
-    ## Attaching package: 'PerformanceAnalytics'
-    ## 
-    ## The following object is masked from 'package:graphics':
-    ## 
-    ##     legend
-    ## 
-    ## Loading required package: tbl2xts
-    ## Loading required package: rugarch
-
-    ## Warning: package 'rugarch' was built under R version 4.4.2
-
-    ## Loading required package: parallel
-    ## 
-    ## Attaching package: 'rugarch'
-    ## 
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     reduce
-    ## 
-    ## The following object is masked from 'package:stats':
-    ## 
-    ##     sigma
-    ## 
-    ## Loading required package: rmgarch
-
-    ## Warning: package 'rmgarch' was built under R version 4.4.2
-
-    ## 
-    ## Attaching package: 'rmgarch'
-    ## 
-    ## The following objects are masked from 'package:xts':
-    ## 
-    ##     first, last
-    ## 
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     first, last
-    ## 
-    ## Loading required package: scales
-    ## 
-    ## Attaching package: 'scales'
-    ## 
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     discard
-    ## 
-    ## The following object is masked from 'package:readr':
-    ## 
-    ##     col_factor
-
-``` r
-list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
-
-
-
-cncy <- read_rds("data/currencies.rds")
-cncy_Carry <- read_rds("data/cncy_Carry.rds")
-cncy_value <- read_rds("data/cncy_value.rds")
-cncyIV <- read_rds("data/cncyIV.rds")
-bbdxy <- read_rds("data/bbdxy.rds")
-IV <- read_rds("data/IV.rds")
-```
-
-``` r
-# Prepare data for -sigZAR, including log returns in the result
-zar_data <- cncy %>%
-  filter(Name == "SouthAfrica_Cncy") %>%
-  arrange(date) %>%
-  mutate(log_return = log(Price / lag(Price))) %>%
-  drop_na() %>%
-  mutate(Squared_Returns = log_return^2)
-
-# Convert to time-series format for GARCH model
-zar_xts <- tbl_xts(zar_data, cols_to_xts = "log_return", spread_by = "Name")
-```
+<!-- -->
 
     ## The spread_by column only has one category. 
     ## Hence only the column name was changed...
-
-``` r
-# Fit GARCH model and extract conditional volatility
-cond_vol_df <- fit_garch(zar_xts)
-
-
-# Plot comparison
-returns_df <- zar_data %>% select(date, Squared_Returns) %>% drop_na()
-plot_volatility_comparison(returns_df, cond_vol_df, filter_date = "2010-01-01")
-```
 
     ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
     ## ℹ Please use `linewidth` instead.
@@ -192,17 +38,6 @@ volatility. Forecasting Power: If you’ve used the GARCH model to
 generate forecasts, you can include future predictions on the plot. This
 will show how well the model anticipates future volatility.
 
-``` r
-# Define currencies
-selected_currencies <- c(
-  "SouthAfrica_Cncy", "Brazil_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
-  "Japan_Cncy", "UK_Cncy_Inv", "Canada_Cncy", "Bostwana_Cncy_Inv", "China_Cncy"
-)
-
-# Fit GARCH for multiple currencies and pass to plotting funciton 
-cncy %>% fit_garch_for_multiple_currencies( selected_currencies) %>% plot_volatility_across_currencies( highlight_currency = "SouthAfrica_Cncy", filter_date = "2015-01-01")
-```
-
     ## The spread_by column only has one category. 
     ## Hence only the column name was changed...
     ## The spread_by column only has one category. 
@@ -223,31 +58,6 @@ cncy %>% fit_garch_for_multiple_currencies( selected_currencies) %>% plot_volati
     ## Hence only the column name was changed...
 
 ![](README_files/figure-markdown_github/plot-cond-var-for-multiple-countries-1.png)
-
-``` r
-# Calculate log returns for ZAR and Dollar
-zar_data <- calculate_log_returns(cncy %>% filter(Name == "SouthAfrica_Cncy"))
-dollar_data <- calculate_log_returns(bbdxy %>% filter(Name == "BBDXY"))
-
-# Prepare PCA data
-pc_data <- prepare_pca_data(IV %>% filter(Name %in% c("V2X", "VIX", "VXEEM")))
-
-# Merge ZAR, Dollar, and PC1 data
-merged_data <- zar_data %>%
-  select(date, ZAR_log_return = log_return) %>%
-  left_join(dollar_data %>% select(date, Dollar_log_return = log_return), by = "date") %>%
-  left_join(pc_data %>% select(date, PC1), by = "date") %>%
-  drop_na()
-
-# Fit DCC-GARCH model
-dcc_fit <- fit_dcc_garch(merged_data)
-
-# Prepare data frames for plotting
-volatility_df <- prepare_volatility_df(dcc_fit, merged_data$date)
-correlation_df <- prepare_correlation_df(dcc_fit, merged_data$date)
-
-plot_dynamic_correlations(correlation_df)
-```
 
 ![](README_files/figure-markdown_github/plot-dynamic-correlations-1.png)
 
