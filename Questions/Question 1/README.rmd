@@ -5,18 +5,8 @@ date: "`r Sys.Date()`"
 output: powerpoint_presentation
 ---
 
-
-# Purpose
-
-Purpose of this work folder.
-
-Ideally store a minimum working example data set in data folder.
-
-Add binary files in bin, and closed R functions in code. Human Readable settings files (e.g. csv) should be placed in settings/
-
-
 ```{r setup, include=FALSE}
-
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
 rm(list = ls()) # Clean your environment:
 gc() 
 source("code/install_and_load.R")
@@ -32,135 +22,47 @@ BM <- read_rds("data/Capped_SWIX.rds") %>% arrange(date)
 AI_Fund <- read_rds("data/AI_Max_Fund.rds") %>% arrange(date)
 ```
 
-
-
-
-```{r}
-get_median_manager_data <- function(data, start_date, end_date) {
-    median_manager <- filter_active_managers(data, start_date, end_date) %>%
-        identify_median_manager()
-    
-    data %>%
-        filter(Fund == median_manager)
-}
-
-
-
-get_fee_adjusted_returns <- function(data, returns_column, fee_levels) {
-    calculate_fee_adjusted_returns(data, returns_column, fee_levels) %>%
-        select(date, Type, Rets) %>%
-        mutate(Type = paste0("Median Manager ", Type))
-}
-
-
-calculate_rolling_returns_by_type <- function(data, rolling_windows) {
-    calculate_all_rolling_returns_for_fees(data, rolling_windows)
-}
-
-
-combine_rolling_returns <- function(ai_data, bm_data, fee_data, rolling_windows) {
-    ai_rolling <- calculate_all_rolling_returns(ai_data$AI_Fund, ai_data$date, rolling_windows, "AI_Fund")
-    bm_rolling <- calculate_all_rolling_returns(bm_data$Returns, bm_data$date, rolling_windows, "Benchmark")
-    fee_rolling <- calculate_rolling_returns_by_type(fee_data, rolling_windows)
-    
-    bind_rows(ai_rolling, bm_rolling, fee_rolling)
-}
-
-
-```
-
-
-```{r}
-plot_rolling_returns <- function(data) {
-    ggplot(data %>% filter(!is.na(rolling_return)), aes(x = date, y = rolling_return, color = Type)) +
-        geom_line(linewidth = 1, alpha = 0.5) +
-        facet_wrap(~ Period, ncol = 1, scales = "free_y") +
-        labs(
-            title = "Rolling Returns Comparison",
-            x = "Date",
-            y = "Rolling Returns",
-            color = "Type"
-        ) +
-        fmxdat::theme_fmx() +
-        theme(
-            plot.title = element_text(hjust = 0.5),
-            legend.position = "bottom"
-        )
-}
-
-```
-
-
-```{r}
-plot_density <- function(data) {
-    ggplot(data %>% filter(!is.na(rolling_return)), aes(x = rolling_return, fill = Type)) +
-        geom_density(alpha = 0.6) +
-        facet_wrap(~ Period, scales = "free") +
-        labs(
-            title = "Density of Rolling Returns by Period",
-            x = "Rolling Return",
-            y = "Density",
-            fill = "Type"
-        ) +
-         theme_bw() +
-        theme(
-            plot.title = element_text(hjust = 0.5),
-            legend.position = "bottom"
-        )
-}
-
-```
-
-```{r}
-plot_returns_by_volatility <- function(data) {
-    ggplot(data %>% filter(!is.na(Volatility_Regime) & Period == "12M" & !is.na(rolling_return)), 
-           aes(x = rolling_return, fill = Type)) +
-        geom_density(alpha = 0.5) +
-        facet_wrap(~ Volatility_Regime + Period, scales = "free_y") +
-        labs(
-            title = "Rolling Returns by Volatility Regime",
-            x = "Rolling Return",
-            y = "Density",
-            fill = "Type"
-        ) +
-        theme_bw() +
-        theme(
-            plot.title = element_text(hjust = 0.5),
-            legend.position = "bottom"
-        )
-}
-
-```
-
-```{r}
-# Step 1: Median Manager Data
+```{r data-wrangling}
+# Median Manager Data
 ASISA_median <- get_median_manager_data(ASISA, "2005-06-01", "2023-08-31")
 
-# Step 2: Fee-Adjusted Returns
+# Fee-Adjusted Returns
 median_manager_fees <- get_fee_adjusted_returns(ASISA_median, "Returns", c(50, 100, 200))
 
-# Step 3: Combined Rolling Returns
+# Combined Rolling Returns
 combined_rolling <- combine_rolling_returns(AI_Fund, BM, median_manager_fees, c(12, 24, 36))
 
-# Step 4: Plots
-plot_rolling_returns(combined_rolling)
-plot_density(combined_rolling)
 
-# Step 5: Volatility Analysis
+# Calculate rolling volatility for the benchmark returns using a 20-day window
 BM_volatility <- calculate_rolling_volatility(BM$Returns, BM$date, window_size = 20) %>%
+    # Classify the rolling volatility into different regimes 
     mutate(Volatility_Regime = stratify_volatility_regimes(Rolling_Volatility))
 
+# Combine the rolling returns data with the benchmark's volatility regimes
 combined_with_volatility <- combined_rolling %>%
     left_join(BM_volatility %>% select(date, Volatility_Regime), by = "date") %>%
+    # Convert the Volatility_Regime column into a factor with ordered levels
     mutate(Volatility_Regime = factor(Volatility_Regime, 
                                       levels = c("Low Volatility", "Normal", "High Volatility")))
 
 
-plot_returns_by_volatility(combined_with_volatility)
+
+```
+```{r plotting-returns}
+
+# Plots
+plot_rolling_returns(combined_rolling)
 
 ```
 
+```{r plotting-density-by_rolling_period}
+plot_density(combined_rolling)
 
+```
+
+```{r plotting-returns-by-vol}
+plot_returns_by_volatility(combined_with_volatility)
+```
 
 
 
@@ -276,61 +178,61 @@ plot_returns_by_volatility(combined_with_volatility)
 
 
 
-```{r}
-ggplot(combined_rolling %>% filter(!is.na(rolling_return)), aes(x = rolling_return, fill = Type)) +
-  geom_density(alpha = 0.6) +  # Semi-transparent density plots
-  facet_wrap(~ Period,scales = "free") +  # Facet by rolling period
-  labs(
-    title = "Density of Rolling Returns by Period",
-    x = "Rolling Return",
-    y = "Density",
-    fill = "Type"
-  ) +
-  fmxdat::theme_fmx() +  
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    legend.position = "bottom"
-  )
+<!-- ```{r} -->
+<!-- ggplot(combined_rolling %>% filter(!is.na(rolling_return)), aes(x = rolling_return, fill = Type)) + -->
+<!--   geom_density(alpha = 0.6) +  # Semi-transparent density plots -->
+<!--   facet_wrap(~ Period,scales = "free") +  # Facet by rolling period -->
+<!--   labs( -->
+<!--     title = "Density of Rolling Returns by Period", -->
+<!--     x = "Rolling Return", -->
+<!--     y = "Density", -->
+<!--     fill = "Type" -->
+<!--   ) + -->
+<!--   fmxdat::theme_fmx() +   -->
+<!--   theme( -->
+<!--     plot.title = element_text(hjust = 0.5), -->
+<!--     legend.position = "bottom" -->
+<!--   ) -->
 
-```
-***
-
-
-```{r}
-# Calculate rolling volatility for the benchmark (BM)
-BM_volatility <- calculate_rolling_volatility(BM$Returns, BM$date, window_size = 20) %>%
-  mutate(Volatility_Regime = stratify_volatility_regimes(Rolling_Volatility))
+<!-- ``` -->
 
 
 
-
-# Merge volatility regimes with combined rolling returns
-combined_rolling_with_volatility <- combined_rolling %>%
-  left_join(BM_volatility %>% select(date, Volatility_Regime), by = "date")
-
-
-
-```
+<!-- ```{r} -->
+<!-- # Calculate rolling volatility for the benchmark (BM) -->
+<!-- BM_volatility <- calculate_rolling_volatility(BM$Returns, BM$date, window_size = 20) %>% -->
+<!--   mutate(Volatility_Regime = stratify_volatility_regimes(Rolling_Volatility)) -->
 
 
 
 
-```{r}
-combined_rolling_with_volatility %>% filter(!is.na(Volatility_Regime)&Period=="12M"&(!is.na(rolling_return))) %>% 
-ggplot( 
-       aes(x = rolling_return, fill = Type)) +
-  geom_density(alpha = 0.5) +
-  facet_wrap(~ Volatility_Regime+Period,scales = "free" ) +
-  labs(
-    title = "Rolling Returns by Volatility Regime",
-    x = "Rolling Return",
-    y = "Density",
-    fill = "Type"
-  ) +
-  theme_bw() +
-  theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
+<!-- # Merge volatility regimes with combined rolling returns -->
+<!-- combined_rolling_with_volatility <- combined_rolling %>% -->
+<!--   left_join(BM_volatility %>% select(date, Volatility_Regime), by = "date") -->
 
-```
+
+
+<!-- ``` -->
+
+
+
+
+<!-- ```{r} -->
+<!-- combined_rolling_with_volatility %>% filter(!is.na(Volatility_Regime)&Period=="12M"&(!is.na(rolling_return))) %>%  -->
+<!-- ggplot(  -->
+<!--        aes(x = rolling_return, fill = Type)) + -->
+<!--   geom_density(alpha = 0.5) + -->
+<!--   facet_wrap(~ Volatility_Regime+Period,scales = "free" ) + -->
+<!--   labs( -->
+<!--     title = "Rolling Returns by Volatility Regime", -->
+<!--     x = "Rolling Return", -->
+<!--     y = "Density", -->
+<!--     fill = "Type" -->
+<!--   ) + -->
+<!--   theme_bw() + -->
+<!--   theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom") -->
+
+<!-- ``` -->
 
 
 

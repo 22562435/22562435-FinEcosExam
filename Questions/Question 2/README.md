@@ -1,36 +1,13 @@
----
-output:
-  md_document:
-    variant: gfm
----
-
 # Purpose
 
 Purpose of this work folder.
 
 Ideally store a minimum working example data set in data folder.
 
-Add binary files in bin, and closed R functions in code. Human Readable settings files (e.g. csv) should be placed in settings/
+Add binary files in bin, and closed R functions in code. Human Readable
+settings files (e.g. csv) should be placed in settings/
 
-
-```{r setup, include=FALSE}
-
-rm(list = ls()) # Clean your environment:
-gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
-source("code/install_and_load.R")
-install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra"))
-
-list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
-Indexes <- read_rds("data/Cncy_Hedge_Assets.rds") %>%
-  mutate(date = floor_date(date, "month"))
-Zar <- read_rds("data/Monthly_zar.rds")%>%
-  mutate(date = floor_date(date, "month"))
-```
-
-
-
-```{r data-wrangling}
-
+``` r
 # Process data and calculate returns in a streamlined manner
 tidy_data <- Indexes %>%
     pivot_longer(cols = -date, names_to = "Tickers", values_to = "value") %>%
@@ -56,21 +33,8 @@ tidy_data <- Indexes %>%
     select(date, Tickers, value)  # Keep original tidy_data columns
 ```
 
-
-```{r plot-scatter}
-
+``` r
 plot_portfolio_relationships(tidy_data, "hedged_return", "currency_returns")
-
 ```
 
-
-
-
-
-
-
-
-
-
-
-
+![](README_files/figure-gfm/plot-scatter-1.png)<!-- -->
