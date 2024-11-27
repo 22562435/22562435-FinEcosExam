@@ -19,10 +19,12 @@ rm(list = ls()) # Cleans environment:
 gc() 
 library(tidyverse)
 source("code/install_and_load.R")
-c("zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","lubridate","ggExtra","rugarch","ggridges","rmgarch","tidyr","scales","dplyr","knitr") %>% install_and_load()
+c("zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","lubridate","ggExtra","rugarch","ggridges","rmgarch","tidyr","scales","dplyr","knitr","quadprog","RiskPortfolios") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
 ```
+
+
 
 # Question 1 
 
@@ -425,3 +427,43 @@ plot_dynamic_correlations(correlation_df)
 # Question 6
 
 
+```{r, setup-6, include=FALSE}
+
+
+rm(list = ls())
+
+list.files('Questions/Question 6/code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+
+
+
+MAA <- read_rds("data/MAA.rds")
+msci <- read_rds("data/msci.rds") %>%
+filter(Name %in% c("MSCI_ACWI", "MSCI_USA", "MSCI_RE", "MSCI_Jap")) %>% rename(Ticker=Name)
+
+asset_class_mapping <- tibble(
+  Ticker = c("ADXY Index", "LP05TREH Index", "LEATTREU Index", "LGAGTRUH Index", 
+             "LGCPTRUH Index", "LUAGTRUU Index", "LUACTRUU Index", "BCOMTR Index", 
+             "DXY Index", "MSCI_ACWI", "MSCI_Jap", "MSCI_RE", "MSCI_USA"),
+  AssetClass = c("Currency", "Credit", "Rates", "Rates", "Credit", "Rates", 
+                 "Credit", "Commodities", "Currency", "Equity", "Equity", 
+                 "Equity", "Equity")
+)
+
+
+```
+
+
+
+The following chunk performs portfolio optimization by calculating optimal asset weights based on historical price data, while applying constraints on asset class exposure and individual asset weights. The optimize_portfolio function pivots the data, calculates covariance and mean returns, and uses quadratic programming to optimize the portfoli, considering constraints such as maximum stock weight, equity exposure, and bond/credit limits. The optimized portfolio weights are then visualized using ggplot2 in the plot_portfolio_weights function, which generates a bar chart with asset classes colour-coded, and percentages displayed above each bar.
+
+
+```{r optimising-and-plotting}
+
+rbind(MAA %>% select(-Name), msci) %>% optimize_portfolio(
+  asset_class_mapping = asset_class_mapping,
+  single_stock_max = 0.4,
+  equities_max = 0.6,
+  bond_credit_max = 0.25
+) %>%  plot_portfolio_weights( asset_class_mapping)
+
+```

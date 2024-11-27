@@ -6,8 +6,8 @@ The accompanying code/ folder on GitHub contains functions used within
 this document.
 
     ##          used (Mb) gc trigger (Mb) max used (Mb)
-    ## Ncells 484082 25.9    1039862 55.6   686457 36.7
-    ## Vcells 901972  6.9    8388608 64.0  1876677 14.4
+    ## Ncells 484151 25.9    1040060 55.6   686457 36.7
+    ## Vcells 902533  6.9    8388608 64.0  1876677 14.4
 
     ## ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
     ## ✔ dplyr     1.1.4     ✔ readr     2.1.5
@@ -120,6 +120,15 @@ this document.
     ## The following object is masked from 'package:readr':
     ## 
     ##     col_factor
+    ## 
+    ## Loading required package: knitr
+
+    ## Warning: package 'knitr' was built under R version 4.4.2
+
+    ## Loading required package: quadprog
+    ## Loading required package: RiskPortfolios
+
+    ## Warning: package 'RiskPortfolios' was built under R version 4.4.2
 
 # Question 1
 
@@ -284,12 +293,12 @@ calculate_metrics(
 )
 ```
 
-    ## # A tibble: 2 × 4
-    ##   Tickers         Correlation with $ZAR.U…¹ `Annual Return` `Standard Deviation`
-    ##   <chr>                               <dbl>           <dbl>                <dbl>
-    ## 1 Hedged Return                      -0.100          0.0516               0.188 
-    ## 2 Unhedged Return                    -0.116          0.0988               0.0991
-    ## # ℹ abbreviated name: ¹​`Correlation with $ZAR.USD`
+| Tickers         | Correlation with $ZAR.USD | Annual Return | Standard Deviation |
+|:---------------|------------------------:|-------------:|-----------------:|
+| Hedged Return   |                -0.1003131 |     0.0515608 |          0.1879226 |
+| Unhedged Return |                -0.1156581 |     0.0987796 |          0.0991014 |
+
+Portfolio Metrics Comparison
 
 # Question 3
 
@@ -613,3 +622,25 @@ plot_dynamic_correlations(correlation_df)
 ![](README_files/figure-markdown_github/plot-dynamic-correlations-1.png)
 
 # Question 6
+
+The following chunk performs portfolio optimization by calculating
+optimal asset weights based on historical price data, while applying
+constraints on asset class exposure and individual asset weights. The
+optimize_portfolio function pivots the data, calculates covariance and
+mean returns, and uses quadratic programming to optimize the portfoli,
+considering constraints such as maximum stock weight, equity exposure,
+and bond/credit limits. The optimized portfolio weights are then
+visualized using ggplot2 in the plot_portfolio_weights function, which
+generates a bar chart with asset classes colour-coded, and percentages
+displayed above each bar.
+
+``` r
+rbind(MAA %>% select(-Name), msci) %>% optimize_portfolio(
+  asset_class_mapping = asset_class_mapping,
+  single_stock_max = 0.4,
+  equities_max = 0.6,
+  bond_credit_max = 0.25
+) %>%  plot_portfolio_weights( asset_class_mapping)
+```
+
+![](README_files/figure-markdown_github/optimising-and-plotting-1.png)

@@ -13,20 +13,6 @@ I have been asked to evaluate the following two statements
 
 ![](README_files/figure-markdown_github/plot-sigma-comparisons-1.png)
 
-This figure directly illustrates the core concept of GARCH models:
-capturing time-varying volatility. By comparing the historical
-volatility (Returns Sigma) with the GARCH-predicted volatility (Sigma
-from GARCH), you can visually demonstrate:
-
-Volatility Clustering: GARCH models are particularly adept at capturing
-periods of high and low volatility, which are often clustered together.
-Your figure can highlight these clusters. Model Fit: The closer the two
-lines are, the better the GARCH model fits the data. Deviations between
-the lines can indicate periods where the model under- or overestimates
-volatility. Forecasting Power: If you’ve used the GARCH model to
-generate forecasts, you can include future predictions on the plot. This
-will show how well the model anticipates future volatility.
-
 ![](README_files/figure-markdown_github/plot-cond-var-for-multiple-countries-1.png)
 The graph confirms that the South African Rand is highly volatile
 compared to other major currencies.

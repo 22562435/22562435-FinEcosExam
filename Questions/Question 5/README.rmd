@@ -53,11 +53,7 @@ plot_volatility_comparison(returns_df, cond_vol_df, filter_date = "2010-01-01")
 
 ```
 
- This figure directly illustrates the core concept of GARCH models: capturing time-varying volatility. By comparing the historical volatility (Returns Sigma) with the GARCH-predicted volatility (Sigma from GARCH), you can visually demonstrate:
 
-Volatility Clustering: GARCH models are particularly adept at capturing periods of high and low volatility, which are often clustered together. Your figure can highlight these clusters.
-Model Fit: The closer the two lines are, the better the GARCH model fits the data. Deviations between the lines can indicate periods where the model under- or overestimates volatility.
-Forecasting Power: If you've used the GARCH model to generate forecasts, you can include future predictions on the plot. This will show how well the model anticipates future volatility.
 
 
 
