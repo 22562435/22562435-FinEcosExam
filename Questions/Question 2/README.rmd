@@ -12,7 +12,7 @@ output:
 rm(list = ls()) # Clean your environment:
 gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
 source("code/install_and_load.R")
-install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra"))
+install_and_load(c("tidyverse","zoo","ggplot2","PerformanceAnalytics","lubridate","ggExtra","knitr"))
 
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 Indexes <- read_rds("data/Cncy_Hedge_Assets.rds") %>%

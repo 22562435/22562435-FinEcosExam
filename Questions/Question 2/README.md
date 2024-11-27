@@ -15,9 +15,9 @@ calculate_metrics(
 )
 ```
 
-    ## # A tibble: 2 × 4
-    ##   Tickers         Correlation with $ZAR.U…¹ `Annual Return` `Standard Deviation`
-    ##   <chr>                               <dbl>           <dbl>                <dbl>
-    ## 1 Hedged Return                      -0.100          0.0516               0.188 
-    ## 2 Unhedged Return                    -0.116          0.0988               0.0991
-    ## # ℹ abbreviated name: ¹​`Correlation with $ZAR.USD`
+| Tickers         | Correlation with \$ZAR.USD | Annual Return | Standard Deviation |
+|:----------------|---------------------------:|--------------:|-------------------:|
+| Hedged Return   |                 -0.1003131 |     0.0515608 |          0.1879226 |
+| Unhedged Return |                 -0.1156581 |     0.0987796 |          0.0991014 |
+
+Portfolio Metrics Comparison

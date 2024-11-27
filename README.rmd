@@ -19,7 +19,7 @@ rm(list = ls()) # Cleans environment:
 gc() 
 library(tidyverse)
 source("code/install_and_load.R")
-c("zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","lubridate","ggExtra","rugarch","ggridges","rmgarch","tidyr","scales","dplyr") %>% install_and_load()
+c("zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","lubridate","ggExtra","rugarch","ggridges","rmgarch","tidyr","scales","dplyr","knitr") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
 ```

@@ -32,5 +32,9 @@ calculate_metrics <- function(data, start_date, row_variables, reference_variabl
         ) %>%
         arrange(Tickers)
 
+    results_table <- kable(results, format = "markdown", caption = "Portfolio Metrics Comparison")
+    return(results_table)
+
+
     return(results)
 }
