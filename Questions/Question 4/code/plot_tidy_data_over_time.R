@@ -26,7 +26,7 @@ plot_tidy_data_over_time <- function(tidy_data, x_var = "date", y_var = "value",
             color = "Metrics",
             linetype = "Metrics"
         ) +
-        # If color values are provided, use them; otherwise, use default ggplot colors
+        # If color values are provided, use them; otherwise, use default ggplot colours
         if (!is.null(color_values)) {
             scale_color_manual(values = color_values)
         } else {

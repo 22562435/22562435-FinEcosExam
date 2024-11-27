@@ -13,15 +13,15 @@ output:
 This document outlines my workflow (Liam Andrew Beattie, Student No. 22562435) for the Financial Econometrics exam (25-27 November 2024). The accompanying code/ folder on GitHub contains functions used within this document. 
 
 
-```{r setup, echo=FALSE,output=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
+```{r setup, echo=TRUE,output=TRUE}
+
 rm(list = ls()) # Cleans environment:
 gc() 
 library(tidyverse)
-
 source("code/install_and_load.R")
-c("dplyr", "ggplot2", "tidyr") %>% install_and_load()
+c("zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","rugarch","rmgarch","tidyr","scales") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
 ```
 
 # Question 1 
@@ -35,9 +35,187 @@ Question 1
 
 # Question 3
 
+
+
 # Question 4
+```{r}
+rm(list = ls()) # Clean your environment:
+
+list.files('Questions/Question 4/code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+
+
+Port_Holds <- read_rds("data/Fund_Holds.rds")
+Port_Rets <- read_rds("data/Fund_Rets.rds")
+BM_Holds <- read_rds("data/BM_Holds.rds")
+BM_Rets <- read_rds("data/BM_Rets.rds")
+    
+
+```
+
+In the following chunk, I first merge and prepare the returns data for both the portfolio (Port_Rets) and the benchmark (BM_Rets) using the merge_and_prepare_returns_data function. This function renames the returns column in the portfolio data, merges the portfolio and benchmark data by date, and retains only the relevant columns. Next, I convert the merged data into a time-series format (xts) using the convert_returns_data_to_xts function. This allows for time-based calculations. I then compute the active returns (the excess returns of the portfolio over the benchmark) using the compute_active_returns function. Following this, I calculate two rolling metrics using rollapply: the rolling tracking error (using a window of 12 periods) with the calculate_rolling_tracking_error function, and the rolling downside deviation using the calculate_rolling_downside_deviation function. Finally, I combine these rolling metrics into a tidy data frame using the create_tidy_data_for_plotting function, which formats the data for easy plotting by creating separate columns for the date, the metric labels, and their corresponding values
+
+```{r data-wrangling, include=FALSE}
+# Pipeline to merge, process, and calculate rolling metrics
+tidy_data <- merge_and_prepare_returns_data(Port_Rets, BM_Rets) %>%
+  convert_returns_data_to_xts() %>%
+  {
+    # Step inside the pipe to calculate active returns and rolling metrics
+    active_returns <- compute_active_returns(.)
+    rolling_te <- calculate_rolling_tracking_error(active_returns, width = 12)
+    rolling_dd <- calculate_rolling_downside_deviation(., width = 12)
+    
+    # Combine rolling metrics into tidy data
+    create_tidy_data_for_plotting(rolling_te, rolling_dd)
+  }
+
+```
+
+
+This chunk uses the plot_tidy_data_over_time function to plot the rolling metrics (tracking error and downside risk) over time. It takes the tidy_data and creates a time-series line plot using ggplot2. THe function checks for the required columns, then plots the data with customized labels, colors, and line types. It also adjusts the axis labels and positions the legend for better clarity.
+
+
+```{r plot-TE-and_DE}
+
+tidy_data %>% plot_tidy_data_over_time(title = "Tracking Error and Downside Risk Over Time")
+```
+
+This chunk first used merge_and_prepare_returns_data that merges portfolio and benchmark return data, renaming the portfolio return column to "Fund" and the benchmark return column to "BM". It then selects the relevant columns (date, Fund, and BM) for further analysis. THis is piped into chart.CumReturns to plot the cumulative returns of the fund versus the benchmark. 
+
+
+```{r cum-returns-Port-and-BM}
+merge_and_prepare_returns_data(Port_Rets, BM_Rets) %>%  
+chart.CumReturns(
+  
+  wealth.index = TRUE,  # Display returns as a wealth index
+  legend.loc = "topleft",  # Place legend on the top left
+  main = "Cumulative Returns: Fund vs. Benchmark",
+  colorset = c("blue", "red")
+)
+
+```
+
+
+
+
+This chunk calls the create_treemap function to generate a treemap visualization of the portfolio's sector composition. The function first merges the portfolio data (Port_Holds) with the benchmark data (BM_Holds) based on the tickers, for the specified date (or the most recent date if none is provided). It handles missing sector and stock names by replacing them with default values ("Unknown" for sectors and tickers for names). The top N stocks by weight are selected and labelled with their full names, while others are labelled by there ticker symbols. The treemap is then created using the treemap package, where the box size is proportional to the stock's weight in the portfolio, and the colour is based on the sector.
+
+```{r sector-treemap-current}
+create_treemap(Port_Holds, BM_Holds, N = 0)
+```
+
+This chunk calls the create_sector_area_graph function to generate a stacked area graph illustrating the sector composition of the portfolio over time. The function begins by merging the portfolio data (Port_Holds) with benchmark data (BM_Holds) to include sector information for each stock. Missing sector information is handled by assigning the label "Unknown" where necessary.
+
+Next, it calculates the total weight of each sector for each date and then computes the percentage composition of each sector by dividing the total weight by the sum of all sectors for that date. The data is grouped by date and sector to ensure proper calculation of these metrics. The graph is then created using ggplot2's geom_area function to generate the stacked area plot, with sector percentages on the y-axis. Custom colours are applied based on sector, and the plot is formatted with labels, and title. 
+
+
+```{r sector-composition-over-time}
+create_sector_area_graph(Port_Holds, BM_Holds)
+```
+
+
+
+
+
+```{r sector-treemap-ats-pike}
+create_treemap(Port_Holds, BM_Holds, N = 0,date=as.Date("31/01/2020", format = "%d/%m/%Y"))
+```
+
+
+
 
 # Question 5
+
+```{r setup-question5}
+
+rm(list = ls())
+
+list.files('Questions/Question 5/code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+cncy <- read_rds("data/currencies.rds")
+cncy_Carry <- read_rds("data/cncy_Carry.rds")
+cncy_value <- read_rds("data/cncy_value.rds")
+cncyIV <- read_rds("data/cncyIV.rds")
+bbdxy <- read_rds("data/bbdxy.rds")
+IV <- read_rds("data/IV.rds")
+```
+
+
+In the following chunk I filter data perform transformations on the rand to calculate its log returns as well as squared logged returns.
+I then convert the dataset time-series format (xts) for GARCH modelling. After which I fit fit a GARCH model to estimate conditional volatility. And finally I pipe this to a plot function that shows comparisons between the squared returns and GARCH volatility estimates.
+
+```{r plot-sigma-comparisons}
+# Prepare data for -sigZAR, including log returns in the result
+zar_data <- cncy %>%
+  filter(Name == "SouthAfrica_Cncy") %>%
+  arrange(date) %>%
+  mutate(log_return = log(Price / lag(Price))) %>%
+  drop_na() %>%
+  mutate(Squared_Returns = log_return^2)
+
+# Convert to time-series format for GARCH model
+zar_xts <- tbl_xts(zar_data, cols_to_xts = "log_return", spread_by = "Name")
+
+# Fit GARCH model and extract conditional volatility
+cond_vol_df <- fit_garch(zar_xts)
+
+
+# Plot comparison
+returns_df <- zar_data %>% select(date, Squared_Returns) %>% drop_na()
+plot_volatility_comparison(returns_df, cond_vol_df, filter_date = "2010-01-01")
+
+```
+
+
+In the following chunk, I define a list of selected currencies and then pass this list along with the cncy dataset to the fit_garch_for_multiple_currencies() function. This function iterates through each currency, prepares the time series data, and fits a GARCH model to estimate conditional volatility. After fitting the GARCH model for each currency, the volatility estimates are combined into a single data frame. The result is then passed to the plot_volatility_across_currencies() function, which plots the volatility comparisons across all selected currencies. The South African Rand (ZAR) is highlighted on the plot, with a date filter set to 2015 onwards for visual comparison.
+
+```{r plot-cond-var-for-multiple-countries}
+# Define currencies
+selected_currencies <- c(
+  "SouthAfrica_Cncy", "Brazil_Cncy", "Australia_Cncy_Inv", "EU_Cncy_Inv", 
+  "Japan_Cncy", "UK_Cncy_Inv", "Canada_Cncy", "Bostwana_Cncy_Inv", "China_Cncy"
+)
+
+# Fit GARCH for multiple currencies and pass to plotting funciton 
+cncy %>% fit_garch_for_multiple_currencies( selected_currencies) %>% plot_volatility_across_currencies( highlight_currency = "SouthAfrica_Cncy", filter_date = "2015-01-01")
+
+```
+
+In the following chunk, I begin by calculating log returns for both the South African Rand (ZAR) and the Dollar (BBDXY) using the calculate_log_returns() function. I then prepare the data for Principal Component Analysis (PCA) by selecting volatility indices ("V2X", "VIX", "VXEEM") from the IV dataset and passing them to the prepare_pca_data() function. PCA is performed on these indices to create a set of uncorrelated components, and the first principal component (PC1) is extracted. PC1 captures the dominant factor affecting the volatility indices, which can be interpreted as a general measure of market volatility.
+
+Next, I merge the ZAR log returns, Dollar log returns, and the calculated PC1 values based on the date, allowing me to analyze how the ZAR and Dollar returns relate to the broader market volatility as represented by PC1. This merged dataset is then passed into the fit_dcc_garch() function to fit the DCC-GARCH model, capturing the conditional volatility dynamics of these series.
+
+Finally, I prepare the data frames for plotting by extracting the conditional volatility and correlation data from the fitted model. The plot_dynamic_correlations() function is called to visualize the dynamic correlations between the ZAR, Dollar, and PC1, highlighting the relationships between these series over time. The PC1, representing a composite measure of market volatility, serves as a key explanatory variable in understanding the ZAR’s behaviour in the context of global volatility trends.
+
+
+```{r plot-dynamic-correlations}
+
+# Calculate log returns for ZAR and Dollar
+zar_data <- calculate_log_returns(cncy %>% filter(Name == "SouthAfrica_Cncy"))
+dollar_data <- calculate_log_returns(bbdxy %>% filter(Name == "BBDXY"))
+
+# Prepare PCA data
+pc_data <- prepare_pca_data(IV %>% filter(Name %in% c("V2X", "VIX", "VXEEM")))
+
+# Merge ZAR, Dollar, and PC1 data
+merged_data <- zar_data %>%
+  select(date, ZAR_log_return = log_return) %>%
+  left_join(dollar_data %>% select(date, Dollar_log_return = log_return), by = "date") %>%
+  left_join(pc_data %>% select(date, PC1), by = "date") %>%
+  drop_na()
+
+# Fit DCC-GARCH model
+dcc_fit <- fit_dcc_garch(merged_data)
+
+# Prepare data frames for plotting
+volatility_df <- prepare_volatility_df(dcc_fit, merged_data$date)
+correlation_df <- prepare_correlation_df(dcc_fit, merged_data$date)
+
+plot_dynamic_correlations(correlation_df)
+
+
+```
+
+
+
 
 # Question 6
 
