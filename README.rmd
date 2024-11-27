@@ -13,15 +13,15 @@ output:
 This document outlines my workflow (Liam Andrew Beattie, Student No. 22562435) for the Financial Econometrics exam (25-27 November 2024). The accompanying code/ folder on GitHub contains functions used within this document. 
 
 
-```{r setup, echo=TRUE,output=TRUE}
+```{r setup, echo=FALSE,output=TRUE}
 
 rm(list = ls()) # Cleans environment:
 gc() 
 library(tidyverse)
 source("code/install_and_load.R")
-c("zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","rugarch","rmgarch","tidyr","scales") %>% install_and_load()
+c("zoo","ggplot2","xts","treemap","PerformanceAnalytics","tbl2xts","lubridate","ggExtra","rugarch","ggridges","rmgarch","tidyr","scales","dplyr") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
 ```
 
 # Question 1 
@@ -37,8 +37,81 @@ Question 1
 
 
 
+
+```{r q3-setup, include=FALSE}
+
+rm(list = ls()) # Clean your environment:
+
+list.files('Questions/Question 3/code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
+
+ALSI <- read_rds("data/ALSI.rds")
+ALSI$date <- as.Date(ALSI$date)
+RebDays <- read_rds("data/Rebalance_days.rds")
+Zar<-read_rds("data/Monthly_zar.rds")
+
+```
+
+
+In the following chunk, the function plot_portfolio_returns_by_volatility is used to visualize the distribution of portfolio returns by volatility level. First, the Zar data is filtered to align with the ALSI dataset, and the categorize_currency function is called to categorize volatility levels based on rolling statistics (mean and standard deviation) over a 12-day window. The volatility levels are classified into "Low Volatility," "Normal Volatility," and "High Volatility" based on the rolling standard deviation. Next, the compute_returns function calculates the portfolio returns for two portfolios, ALSI (using the J203 column for weights) and SWIX (using the J403 column). This function converts  portfolio weights into a time series format and computes returns using the Safe_Return.portfolio method. The portfolio returns are then merged with the volatility categories from the Zar data, and a new Portfolio_Type column is added to distinguish between ALSI and SWIX returns. Finally, a ridgeline plot iscreated using ggplot2, which shows the distribution of portfolio returns for each portfolio type, categorized by volatility levels. 
+
+```{r distriution-by-vol-level}
+
+plot_portfolio_returns_by_volatility(ALSI, Zar, compute_returns)
+```
+
+
+The following chunk works generates a plot that shows the mean returns of the ALSI and SWIX portfolios, categorized by market capitalization (small, medium, and large caps), over time, starting from a specified start date. The function plot_mean_returns_by_cap_size begins by preparing the data, where it extracts the portfolio weights for ALSI and SWIX, specifically filtering by market cap size (small, medium, and large). It then computes the returns for each portfolio and cap size using the compute_returns function, which dynamically processes the weight and return data for each segment. The function combines these returns into a single dataset, where each entry includes the portfolio type (ALSI or SWIX) and cap size. The data is grouped by date, index, and cap size to calculate the mean return for each group. Finally, the mean returns are plotted using ggplot2.
+
+```{r plot-returns-by-cap-size}
+
+
+
+ALSI %>% filter(!is.na(Index_Name)) %>% plot_mean_returns_by_cap_size(start_date = "2020-06-01")
+```
+
+
+The following chunk works largely in the same manor as the one previous, but with sector categories rather than market capitalization.
+
+```{r plot-returns-by-sector}
+
+
+ALSI %>% filter(!is.na(Sector)) %>% plot_mean_returns_by_sector(start_date = "2020-06-01")
+```
+
+
+This chunk generates a plot showing the sector exposure of the ALSI portfolio over time. The function plot_sector_exposure_over_time groups the ALSI data by date and sector, then sums the portfolio weights (using columns J203 for ALSI and J403 for SWIX). It reshapes the data into a long format and creates an area chart using ggplot2, where the y-axis represents the proportion of the portfolio allocated to each sector. The plot is faceted by ALSI and SWIX, with sectors colour-coded for clarity, displaying sector exposure over time.
+
+
+```{r plot-sector-exposure-over-time}
+ALSI %>%  plot_sector_exposure_over_time()
+
+```
+
+
+The last two functions called on the analyze_capped_indexes function that evaluates the impact of capping on portfolio weights by applying specified weight caps (e.g., 5% and 10%) to assets in the ALSI dataset. It first filters the ALSI data based on rebalancing dates from RebDays. Then, for each cap level, it applies the apply_capping funtcion to adjust weights. The apply_capping function identifies assets whose weight exceeds the specified cap and then reallocates the weights: it sets the weight of "Breachers" (assets exceeding the cap) to the cap value, and proportionally redistributes the remaining weight among the non-Breachers. This process ensures that the total weight remains equal to 1, and no asset exceeds the specified cap. After applying the caps, the function computes the returns for each adjusted portfolio using compute_returns. Finally, it visualizes the capped returns using the plot_capped_returns function, comparing the returns at different cap levels to those of an uncapped portfolio. 
+
+
+```{r capping-impact-on-J403}
+analyze_capped_indexes(ALSI, RebDays, column = "J403", caps = c(0.05, 0.10))
+
+```
+
+
+```{r capping-impact-on-J203}
+analyze_capped_indexes(ALSI, RebDays, column = "J203", caps = c(0.05, 0.10))
+
+
+
+```
+
+
+
+
+
+
+
 # Question 4
-```{r}
+```{r q4-setup,echo=FALSE}
 rm(list = ls()) # Clean your environment:
 
 list.files('Questions/Question 4/code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))

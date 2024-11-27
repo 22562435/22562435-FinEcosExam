@@ -128,7 +128,7 @@ Zar<-read_rds("data/Monthly_zar.rds")
 # Introduction \label{Introduction}
 
 ```{r distriution-by-vol-level}
-# Example usage
+
 plot_portfolio_returns_by_volatility(ALSI, Zar, compute_returns)
 ```
 
@@ -136,7 +136,7 @@ plot_portfolio_returns_by_volatility(ALSI, Zar, compute_returns)
 ```{r plot-returns-by-cap-size}
 
 
-# Example usage with a start date
+
 ALSI %>% filter(!is.na(Index_Name)) %>% plot_mean_returns_by_cap_size(start_date = "2020-06-01")
 ```
 Note that the returns sit on top of each other and therefore the plot is orange.  Only in the large caps do ALSI returns differ by generating a greater variance in mean returns.
@@ -145,7 +145,7 @@ Note that the returns sit on top of each other and therefore the plot is orange.
 ```{r plot-returns-by-sector}
 
 
-# Example usage with a start date
+
 ALSI %>% filter(!is.na(Sector)) %>% plot_mean_returns_by_sector(start_date = "2020-06-01")
 ```
 
