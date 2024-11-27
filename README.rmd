@@ -14,7 +14,7 @@ This document outlines my workflow (Liam Andrew Beattie, Student No. 22562435) f
 
 
 ```{r setup, echo=FALSE,output=FALSE}
-
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
 rm(list = ls()) # Cleans environment:
 gc() 
 library(tidyverse)
@@ -24,8 +24,21 @@ c("dplyr", "ggplot2", "tidyr") %>% install_and_load()
 list.files('code/', full.names = T, recursive = T) %>% .[grepl('.R', .)] %>% as.list() %>% walk(~source(.))
 ```
 
-## Question 1 
+# Question 1 
 
 Question 1
+
+
+# Question 2
+
+
+
+# Question 3
+
+# Question 4
+
+# Question 5
+
+# Question 6
 
 
