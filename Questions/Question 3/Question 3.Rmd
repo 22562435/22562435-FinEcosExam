@@ -127,15 +127,13 @@ Zar<-read_rds("data/Monthly_zar.rds")
 
 # Introduction \label{Introduction}
 
-```{r}
+```{r distriution-by-vol-level}
 # Example usage
 plot_portfolio_returns_by_volatility(ALSI, Zar, compute_returns)
 ```
 
 
-
-
-```{r}
+```{r plot-returns-by-cap-size}
 
 
 # Example usage with a start date
@@ -144,7 +142,7 @@ ALSI %>% filter(!is.na(Index_Name)) %>% plot_mean_returns_by_cap_size(start_date
 Note that the returns sit on top of each other and therefore the plot is orange.  Only in the large caps do ALSI returns differ by generating a greater variance in mean returns.
 
 
-```{r}
+```{r plot-returns-by-sector}
 
 
 # Example usage with a start date
@@ -162,7 +160,7 @@ Again the returns sit on top of each other, and differ slightly when looking at 
 
 
 
-```{r}
+```{r plot-sector-exposure-over-time}
 ALSI %>%  plot_sector_exposure_over_time()
 
 ```
@@ -172,16 +170,13 @@ This graph shows that the SWIX tends to hold more Industrials.
 
 
 
-```{r}
+```{r capping-impact-on-J403}
 analyze_capped_indexes(ALSI, RebDays, column = "J403", caps = c(0.05, 0.10))
-
-
-
 
 ```
 
 
-```{r}
+```{r capping-impact-on-J203}
 analyze_capped_indexes(ALSI, RebDays, column = "J203", caps = c(0.05, 0.10))
 
 

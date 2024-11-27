@@ -39,7 +39,8 @@ plot_portfolio_returns_by_volatility <- function(ALSI, Zar, compute_returns, vol
             fill = "Return Type"
         ) +
         theme_minimal() +
-        theme(legend.position = "bottom")
+        theme(legend.position = "bottom",
+    plot.title = element_text(size = 10))
 }
 
 
