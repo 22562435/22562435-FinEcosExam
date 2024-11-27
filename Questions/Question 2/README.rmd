@@ -4,13 +4,7 @@ output:
     variant: gfm
 ---
 
-# Purpose
-
-Purpose of this work folder.
-
-Ideally store a minimum working example data set in data folder.
-
-Add binary files in bin, and closed R functions in code. Human Readable settings files (e.g. csv) should be placed in settings/
+# Question 2
 
 
 ```{r setup, include=FALSE}
@@ -29,9 +23,8 @@ Zar <- read_rds("data/Monthly_zar.rds")%>%
 
 
 
-```{r data-wrangling}
+```{r data-wrangling,include=FALSE}
 
-# Process data and calculate returns in a streamlined manner
 tidy_data <- Indexes %>%
     pivot_longer(cols = -date, names_to = "Tickers", values_to = "value") %>%
     bind_rows(Zar) %>%
@@ -62,6 +55,28 @@ tidy_data <- Indexes %>%
 plot_portfolio_relationships(tidy_data, "hedged_return", "currency_returns")
 
 ```
+
+
+
+```{r table-construction}
+calculate_metrics(
+  data = tidy_data,
+  start_date = "2004-12-01",
+  row_variables = c("hedged_return", "unhedged_return"),
+  reference_variable = "$ZAR.USD"
+)
+
+
+
+```
+
+
+
+
+
+
+
+
 
 
 
